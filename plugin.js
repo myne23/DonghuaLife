@@ -425,11 +425,15 @@ function browseCursor(cursor) {
   try {
     const parsed = JSON.parse(String(cursor));
     if (parsed && Number.isInteger(parsed.page) && parsed.page >= 1) {
-      return { page: parsed.page, previous: String(parsed.previous || "") };
+      return {
+        page: parsed.page,
+        previous: String(parsed.previous || ""),
+        seen: Array.isArray(parsed.seen) ? parsed.seen.filter((value) => typeof value === "string").slice(0, 200) : []
+      };
     }
   } catch {}
   const page = Number(cursor);
-  return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "" };
+  return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "", seen: [] };
 }
 
 function pageSignature(items) {
@@ -599,17 +603,35 @@ export async function browse(ref, cursor) {
   }
 
   if (ref === "ultimos-episodios") {
-    const url = BASE + "/ultimos-episodios" + (page > 1 ? "?page=" + page : "");
-    const latestHtml = await getText(url);
     const catalogHtml = await getText(SERIES + "?sort=az");
     const catalog = unique(parseSeries(catalogHtml));
-    let parsed = unique(parseLatestSeries(latestHtml));
-    if (!parsed.length && page === 1) {
-      const homeHtml = await getText(BASE + "/");
-      parsed = unique(parseLatestSeries(sectionSlice(homeHtml, "últimos? episodios", 60000)));
+    const seen = new Set(cursorState.seen || []);
+    const items = [];
+    let sourcePage = page;
+    // Una misma serie puede aparecer varias veces en la página de episodios recientes.
+    // Avanzamos páginas fuente hasta encontrar series nuevas, sin devolver tandas repetidas.
+    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_PAGE; checked++, sourcePage++) {
+      const url = BASE + "/ultimos-episodios" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+      const latestHtml = await getText(url);
+      const parsed = unique(parseLatestSeries(latestHtml));
+      if (!parsed.length) break;
+      const mapped = mapToCatalog(parsed, catalog);
+      for (const item of mapped) {
+        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        items.push(item);
+        seen.add(item.ref);
+      }
+      // Si ya encontramos nuevas series, devolvemos esta tanda y seguimos desde la página
+      // siguiente en la próxima petición. Si no, seguimos buscando sin crear una página vacía.
+      if (items.length) break;
     }
-    const items = mapToCatalog(parsed, catalog).slice(0, MAX_PAGE);
-    return pagedResult(items, page, cursorState.previous);
+    if (!items.length) return { items: [] };
+    return {
+      items: items.slice(0, MAX_PAGE),
+      next: sourcePage <= 100
+        ? JSON.stringify({ page: sourcePage, seen: Array.from(seen).slice(-200) })
+        : undefined
+    };
   }
 
   if (ref === "tendencias") {
