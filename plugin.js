@@ -89,7 +89,7 @@ function parseSeries(html) {
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src") ||
       /(?:background-image)\s*:\s*url\((["']?)([^)"']+)\1\)/i.exec(match[0])?.[2] || "";
     const candidate = {
-      id: slug, ref: SERIES + "/" + slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
+      id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
       kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
       backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"]
     };
@@ -106,7 +106,7 @@ function parseSeries(html) {
     const slug = slugFromUrl(absolute(heroLink[2]));
     if (slug && !bySlug.has(slug)) {
       const image = ogImage ? absolute(ogImage[1]) : "";
-      bySlug.set(slug, { id: slug, ref: SERIES + "/" + slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
+      bySlug.set(slug, { id: slug, ref: slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
         poster: image || undefined, backdrop: image || undefined, genres: ["anime"] });
     }
   }
@@ -343,7 +343,7 @@ function parseLatestSeries(html) {
     if (seen.has(slug)) continue;
     out.push({
       id: slug,
-      ref: SERIES + "/" + slug,
+      ref: slug,
       title: title.slice(0, 200),
       kind: "series",
       poster: posterRaw ? absolute(posterRaw) : undefined,
@@ -360,26 +360,29 @@ function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
   const allAvailable = unique(allHome.concat(allCatalog));
   const featuredHtml = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
   const trendsHtml = sectionSlice(homeHtml, "tendencias", 45000);
+
   let featured = unique(parseSeries(featuredHtml));
-  // Si el HTML no conserva el encabezado de la sección, usar el catálogo de la portada
-  // para no terminar con una sola tarjeta en el banner.
-  if (featured.length < 3) featured = allAvailable.slice(0, Math.min(10, allAvailable.length));
+  if (featured.length < 3) featured = allHome.length >= 3 ? allHome.slice(0, 10) : allAvailable.slice(0, 10);
   featured = featured.slice(0, MAX_HOME);
+
   let latest = unique(parseLatestSeries(latestHtml || ""));
   if (!latest.length) latest = unique(parseLatestSeries(homeHtml));
   latest = latest.filter((x) => !featured.some((y) => y.id === x.id)).slice(0, MAX_HOME);
+
   let trends = unique(parseSeries(trendsHtml));
   if (trends.length < 3) trends = allAvailable;
   trends = trends.filter((x) => !featured.some((y) => y.id === x.id) && !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
-  return [
-    // Cada fila tiene su propio ref: Kino usa este valor para «Ver más»,
-    // mientras que el ref de cada tarjeta sigue apuntando a la ficha de la serie.
+
+  // No ocultar toda la portada si la web cambia sus encabezados HTML.
+  // La fila general del catálogo sigue disponible aunque fallen las secciones editoriales.
+  const rows = [
     { id: "destacados", ref: "destacados", title: "Destacados", items: featured },
     { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos episodios", items: latest },
-    { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends }
-  ].filter((row) => row.items.length);
+    { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends },
+    { id: "series", ref: "series", title: "Todas las series", items: allAvailable.slice(0, MAX_HOME) }
+  ];
+  return rows.filter((row) => row.items.length);
 }
-
 export async function home() {
   await null;
   const results = await Promise.all([
