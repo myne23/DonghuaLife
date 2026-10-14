@@ -2,14 +2,18 @@ import assert from 'node:assert/strict';
 
 const homeHtml = [
   '<a href="/series/hero"><img alt="Hero Donghua" src="/images/hero.jpg"></a>',
+  '<h2>ÚLTIMOS EPISODIOS</h2>',
+  '<a href="/watch/gamma-donghua-1-5"><h3>Gamma Donghua</h3><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a>',
+  '<h2>ESTRENOS VIP</h2>',
+  '<a href="/watch/vip-donghua-1-7"><h3>VIP Donghua</h3><img alt="VIP Donghua" src="/images/vip.jpg"><span>Capítulo 7</span></a>',
   '<h2>TE RECOMENDAMOS PARA VOS</h2>',
-  '<a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a>',
-  '<a href="/series/beta"><img alt="Beta Donghua" src="/images/beta.jpg"></a>',
-  '<a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a>',
+  '<h3><a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a></h3>',
+  '<h3><a href="/series/beta"><img alt="Beta Donghua" src="/images/beta.jpg"></a></h3>',
+  '<h3><a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a></h3>',
   '<h2>TENDENCIAS</h2>',
-  '<a href="/series/delta"><img alt="Delta Donghua" src="/images/delta.jpg"></a>',
-  '<a href="/series/epsilon"><img alt="Epsilon Donghua" src="/images/epsilon.jpg"></a>',
-  '<a href="/series/zeta"><img alt="Zeta Donghua" src="/images/zeta.jpg"></a>'
+  '<h3><a href="/series/delta"><img alt="Delta Donghua" src="/images/delta.jpg"></a></h3>',
+  '<h3><a href="/series/epsilon"><img alt="Epsilon Donghua" src="/images/epsilon.jpg"></a></h3>',
+  '<h3><a href="/series/zeta"><img alt="Zeta Donghua" src="/images/zeta.jpg"></a></h3>'
 ].join('');
 const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-temporada-1-5"><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a>';
 const catalogHtml = [
@@ -45,11 +49,13 @@ const plugin = await import('../plugin.js?smoke=2');
 const home = await plugin.home();
 assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'Destacados'));
 assert.ok(home.some((row) => row.id === 'ultimos-episodios' && row.title === 'Últimos episodios'));
+assert.ok(home.some((row) => row.id === 'estrenos-vip' && row.title === 'Estrenos VIP'));
 assert.ok(home.some((row) => row.id === 'tendencias' && row.title === 'Tendencias'));
 assert.equal(home[0].items[0].title, 'Alpha Donghua');
 assert.equal(home[1].items[0].title, 'Gamma Donghua');
 assert.equal(home[1].items[0].ref, 'https://donghualife.com/series/gamma-donghua');
-assert.equal(home[2].items[0].title, 'Delta Donghua');
+assert.equal(home[2].items[0].title, 'VIP Donghua');
+assert.equal(home[3].items[0].title, 'Delta Donghua');
 assert.ok(home.some((row) => row.id === 'series' && row.title === 'Todas las series'));
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
 assert.equal(home[0].items[0].ref, 'https://donghualife.com/series/alpha');
@@ -71,4 +77,4 @@ globalThis.kino.fetch = async (input) => {
 };
 const okStream = await plugin.resolve('/watch/alpha-donghua-1-1');
 assert.equal(okStream.url,'https://v.okcdn.ru/video.mp4');
-console.log('Prueba simulada correcta: 3 filas de inicio, ruta nueva de episodios, búsqueda, episodios y reproducción.');
+console.log('Prueba simulada correcta: recomendaciones, últimos episodios, estrenos VIP, tendencias, catálogo, búsqueda, episodios y reproducción.');
