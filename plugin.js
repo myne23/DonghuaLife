@@ -248,20 +248,27 @@ export async function search(query) {
     return haystack.includes(wanted) || (words.length > 1 && words.every((word) => haystack.includes(word)));
   };
 
-  // La búsqueda de DonghuaLife se dibuja parcialmente con JavaScript. Consultar ?search=
-  // no garantiza resultados; leemos varias páginas del catálogo en paralelo y filtramos aquí.
-  // Así evitamos hasta cuatro esperas consecutivas que podían superar el límite de 15 s de Kino.
+  // Consultamos de a una página para no disparar cuatro solicitudes simultáneas al sitio.
+  // Algunos servidores responden 502 cuando reciben varias peticiones seguidas desde el mismo cliente.
+  // En cuanto encontramos coincidencias, devolvemos resultados sin pedir páginas innecesarias.
   const urls = [
     SERIES,
     SERIES + "?page=2",
     SERIES + "?page=3",
     BASE + "/"
   ];
-  const pages = await Promise.all(urls.map(async (url) => {
-    try { return parseSeries(await getText(url)); }
-    catch (e) { log("No se pudo consultar una página de búsqueda", e.message); return []; }
-  }));
-  return unique(pages.flat().filter(matches)).slice(0, MAX_PAGE);
+  const collected = [];
+  for (const url of urls) {
+    try {
+      const items = parseSeries(await getText(url));
+      collected.push(...items);
+      const found = unique(collected.filter(matches)).slice(0, MAX_PAGE);
+      if (found.length) return found;
+    } catch (e) {
+      log("No se pudo consultar una página de búsqueda", e.message);
+    }
+  }
+  return [];
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
