@@ -181,6 +181,12 @@ function parseInfo(html, slug) {
 function parseEpisodes(html, pageUrl) {
   const out = [];
   const seen = new Set();
+  // El rótulo del especial suele estar en la tarjeta de temporada (img alt/title),
+  // mientras que el enlace del capítulo puede mostrar solo «Capítulo 152».
+  const decodedPage = decodeHtml(String(html || ""));
+  const specialLabelMatch = /(Peli(?:\s*Ep)?\s*\d+\s*-\s*\d+)/i.exec(decodedPage);
+  const specialLabel = specialLabelMatch ? specialLabelMatch[1].replace(/\s+/g, " ").trim() : "";
+  const specialRange = /Peli(?:\s*Ep)?\s*(\d+)\s*-\s*(\d+)/i.exec(specialLabel);
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   while ((match = re.exec(html)) && out.length < 2000) {
@@ -198,14 +204,20 @@ function parseEpisodes(html, pageUrl) {
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
     const innerImage = /<img\b[^>]*>/i.exec(match[3]);
-    let label = textOf(match[3]) ||
-      (innerImage ? (attr(innerImage[0], "alt") || attr(innerImage[0], "title")) : "") ||
-      attr(match[0], "aria-label") || attr(match[0], "title");
-    label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
-    const specialMovie = /^peli\s*ep\s*\d+\s*-\s*\d+$/i.test(label);
+    const imageLabel = innerImage ? (attr(innerImage[0], "alt") || attr(innerImage[0], "title")) : "";
+    const explicitLabels = [linkLabel, imageLabel, attr(match[0], "aria-label"), attr(match[0], "title")];
+    const explicitSpecial = explicitLabels.find((value) =>
+      value && /^peli(?:\s*ep)?\s*\d+\s*-\s*\d+$/i.test(value.trim()));
+    // Si el enlace del capítulo está rotulado genéricamente, la tarjeta de temporada
+    // identifica el especial por el número final del rango (p. ej. Peli Ep 151- 152).
+    const isSpecialSeason = Boolean(specialRange && season === Number(specialRange[2]) && season !== 1);
+    const specialMovie = Boolean(explicitSpecial || isSpecialSeason || /\/watch\/[^/]*peli[^/]*\d+-\d+/i.test(path));
+    let label = explicitSpecial || (specialMovie ? specialLabel : "") || linkLabel || imageLabel ||
+      attr(match[0], "aria-label") || attr(match[0], "title") || "";
+    if (specialMovie && !label) label = "Peli " + (specialRange ? specialRange[1] + "-" + specialRange[2] : season + "-" + number);
+    label = specialMovie ? label.trim() : label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
     if (specialMovie) {
-      // El sitio lo presenta como una opción especial junto a Temporada 1.
-      // Conservamos exactamente el rótulo de la web para usarlo como nombre de temporada.
+      // Preservar literalmente el rótulo de la tarjeta, no convertir el especial en temporada 152.
     } else if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
       label = "Capítulo " + number;
     } else {
@@ -439,6 +451,15 @@ function browseCursor(cursor) {
   return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "", seen: [] };
 }
 
+function cursorKey(value) {
+  // Cursor de tamaño acotado: Kino limita next a 2048 caracteres y los refs completos
+  // de 25-50 títulos pueden superar ese límite. FNV-1a mantiene claves cortas y estables.
+  const input = String(value || "");
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) hash = Math.imul(hash ^ input.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(36);
+}
+
 function pageSignature(items) {
   if (!items || !items.length) return "";
   const refs = items.map((item) => String(item.ref || item.id || ""));
@@ -604,7 +625,7 @@ export async function browse(ref, cursor) {
     let sourcePage = page;
     if (isHomeRow && page === 1 && seen.size === 0) {
       const firstHtml = await getText(BASE + "/peliculas");
-      parseMovieItems(firstHtml).slice(0, MAX_HOME).forEach((item) => seen.add(item.ref));
+      parseMovieItems(firstHtml).slice(0, MAX_HOME).forEach((item) => seen.add(cursorKey(item.ref)));
       sourcePage = 2;
     }
     let sourceHtml = "";
@@ -615,9 +636,9 @@ export async function browse(ref, cursor) {
       const parsed = parseMovieItems(sourceHtml);
       if (!parsed.length) break;
       for (const item of parsed) {
-        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
         items.push(item);
-        seen.add(item.ref);
+        seen.add(cursorKey(item.ref));
       }
       if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
     }
@@ -625,7 +646,7 @@ export async function browse(ref, cursor) {
     return {
       items: items.slice(0, MAX_PAGE),
       next: hasNextPage(sourceHtml, sourcePage)
-        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-200) })
+        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-30) })
         : undefined
     };
   }
@@ -638,7 +659,7 @@ export async function browse(ref, cursor) {
     if (isHomeRow && page === 1 && seen.size === 0) {
       const homeHtml = await getText(BASE + "/");
       const homeLatest = sectionSlice(homeHtml, "últimos? episodios", 60000);
-      mapToCatalog(unique(parseLatestSeries(homeLatest)), catalog).forEach((item) => seen.add(item.ref));
+      mapToCatalog(unique(parseLatestSeries(homeLatest)), catalog).forEach((item) => seen.add(cursorKey(item.ref)));
     }
     const items = [];
     let sourcePage = page;
@@ -650,9 +671,9 @@ export async function browse(ref, cursor) {
       if (!parsed.length) break;
       const mapped = mapToCatalog(parsed, catalog);
       for (const item of mapped) {
-        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
         items.push(item);
-        seen.add(item.ref);
+        seen.add(cursorKey(item.ref));
       }
       if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
     }
@@ -660,19 +681,47 @@ export async function browse(ref, cursor) {
     return {
       items: items.slice(0, MAX_PAGE),
       next: hasNextPage(sourceHtml, sourcePage)
-        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-200) })
+        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-30) })
         : undefined
     };
   }
 
   if (ref === "tendencias") {
-    // Tendencias es una lista editorial de la portada, no una página del catálogo.
-    // No ofrecemos un cursor falso que repetiría los mismos resultados.
-    if (page > 1) return { items: [] };
-    const homeHtml = await getText(BASE + "/");
-    const sectionHtml = sectionSlice(homeHtml, "tendencias", 45000);
-    const items = unique(parseSeries(sectionHtml)).slice(0, MAX_PAGE);
-    return { items };
+    const seen = new Set(cursorState.seen || []);
+    if (page === 1) {
+      const homeHtml = await getText(BASE + "/");
+      const sectionHtml = sectionSlice(homeHtml, "tendencias", 45000);
+      const items = unique(parseSeries(sectionHtml)).slice(0, MAX_PAGE);
+      if (!items.length) return { items: [] };
+      items.forEach((item) => seen.add(cursorKey(item.ref)));
+      return {
+        items,
+        next: JSON.stringify({ page: 2, seen: Array.from(seen).slice(-30) })
+      };
+    }
+    // La portada solo muestra una selección. Para continuar, usamos el catálogo
+    // ordenado por popularidad, que permite recorrer más títulos sin repetir la fila.
+    let sourcePage = page;
+    let sourceHtml = "";
+    const items = [];
+    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_PAGE; checked++, sourcePage++) {
+      sourceHtml = await getText(SERIES + "?sort=popular" + (sourcePage > 1 ? "&page=" + sourcePage : ""));
+      const parsed = unique(parseSeries(sourceHtml));
+      if (!parsed.length) break;
+      for (const item of parsed) {
+        if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
+        items.push(item);
+        seen.add(cursorKey(item.ref));
+      }
+      if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
+    }
+    if (!items.length) return { items: [] };
+    return {
+      items: items.slice(0, MAX_PAGE),
+      next: hasNextPage(sourceHtml, sourcePage)
+        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-30) })
+        : undefined
+    };
   }
 
   if (ref === "series-finalizadas") {
