@@ -451,6 +451,15 @@ function browseCursor(cursor) {
   return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "", seen: [] };
 }
 
+function cursorKey(value) {
+  // Cursor de tamaño acotado: Kino limita next a 2048 caracteres y los refs completos
+  // de 25-50 títulos pueden superar ese límite. FNV-1a mantiene claves cortas y estables.
+  const input = String(value || "");
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) hash = Math.imul(hash ^ input.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(36);
+}
+
 function pageSignature(items) {
   if (!items || !items.length) return "";
   const refs = items.map((item) => String(item.ref || item.id || ""));
@@ -616,7 +625,7 @@ export async function browse(ref, cursor) {
     let sourcePage = page;
     if (isHomeRow && page === 1 && seen.size === 0) {
       const firstHtml = await getText(BASE + "/peliculas");
-      parseMovieItems(firstHtml).slice(0, MAX_HOME).forEach((item) => seen.add(item.ref));
+      parseMovieItems(firstHtml).slice(0, MAX_HOME).forEach((item) => seen.add(cursorKey(item.ref)));
       sourcePage = 2;
     }
     let sourceHtml = "";
@@ -627,9 +636,9 @@ export async function browse(ref, cursor) {
       const parsed = parseMovieItems(sourceHtml);
       if (!parsed.length) break;
       for (const item of parsed) {
-        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
         items.push(item);
-        seen.add(item.ref);
+        seen.add(cursorKey(item.ref));
       }
       if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
     }
@@ -650,7 +659,7 @@ export async function browse(ref, cursor) {
     if (isHomeRow && page === 1 && seen.size === 0) {
       const homeHtml = await getText(BASE + "/");
       const homeLatest = sectionSlice(homeHtml, "últimos? episodios", 60000);
-      mapToCatalog(unique(parseLatestSeries(homeLatest)), catalog).forEach((item) => seen.add(item.ref));
+      mapToCatalog(unique(parseLatestSeries(homeLatest)), catalog).forEach((item) => seen.add(cursorKey(item.ref)));
     }
     const items = [];
     let sourcePage = page;
@@ -662,9 +671,9 @@ export async function browse(ref, cursor) {
       if (!parsed.length) break;
       const mapped = mapToCatalog(parsed, catalog);
       for (const item of mapped) {
-        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
         items.push(item);
-        seen.add(item.ref);
+        seen.add(cursorKey(item.ref));
       }
       if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
     }
@@ -684,7 +693,7 @@ export async function browse(ref, cursor) {
       const sectionHtml = sectionSlice(homeHtml, "tendencias", 45000);
       const items = unique(parseSeries(sectionHtml)).slice(0, MAX_PAGE);
       if (!items.length) return { items: [] };
-      items.forEach((item) => seen.add(item.ref));
+      items.forEach((item) => seen.add(cursorKey(item.ref)));
       return {
         items,
         next: JSON.stringify({ page: 2, seen: Array.from(seen).slice(-30) })
@@ -700,9 +709,9 @@ export async function browse(ref, cursor) {
       const parsed = unique(parseSeries(sourceHtml));
       if (!parsed.length) break;
       for (const item of parsed) {
-        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
         items.push(item);
-        seen.add(item.ref);
+        seen.add(cursorKey(item.ref));
       }
       if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
     }
