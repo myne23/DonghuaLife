@@ -1113,6 +1113,76 @@ async function capturePageStream(url) {
   }
 }
 
+function streamForDirectUrl(url, referer) {
+  if (!url || !/^https:\\/\\//i.test(url) || !/\\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url)) return null;
+  const stream = { url, mime: /\\.m3u8(?:[?#]|$)/i.test(url) ? "application/vnd.apple.mpegurl" :
+    /\\.webm(?:[?#]|$)/i.test(url) ? "video/webm" : "video/mp4" };
+  if (referer) stream.headers = { Referer: referer };
+  return stream;
+}
+
+async function resolveDailymotion(url) {
+  const id = /(?:\\/video\\/|\\/embed\\/video\\/|[?&]video=)([a-z0-9]+)/i.exec(url) || /dai\\.ly\\/([a-z0-9]+)/i.exec(url);
+  if (id) {
+    try {
+      const raw = await getText("https://www.dailymotion.com/player/metadata/video/" + id[1], { headers: { Referer: url } });
+      const data = JSON.parse(raw);
+      const urls = [];
+      const visit = (value) => {
+        if (typeof value === "string") {
+          const candidate = value.replace(/\\\\\\//g, "/");
+          if (/^https:\\/\\//i.test(candidate) && /\\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(candidate)) urls.push(candidate);
+        } else if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === "object") Object.values(value).forEach(visit);
+      };
+      visit(data);
+      const media = urls.find((value) => /\\.m3u8(?:[?#]|$)/i.test(value)) || urls[0];
+      if (media) return streamForDirectUrl(media, url);
+    } catch (error) {
+      log("Dailymotion: no se pudieron leer metadatos", error && error.message || String(error));
+    }
+  }
+  const html = await getText(url, { headers: { Referer: "https://www.dailymotion.com/" } });
+  const media = parseSourceCandidates(html, url).find((item) => item.provider === "direct");
+  if (media) return streamForDirectUrl(media.url, url);
+  const captured = await capturePageStream(url);
+  if (captured) return captured;
+  throw new Error("Dailymotion no entregó una fuente directa compatible");
+}
+
+async function resolveProviderUrl(url) {
+  if (/\\. (?:m3u8|mp4|webm)/i.test(url)) {
+    const direct = streamForDirectUrl(url);
+    if (direct) return direct;
+  }
+  if (/ok\\.ru\\/(?:video|videoembed)\\//i.test(url)) return resolveOkru(url);
+  if (/(?:dailymotion\\.com|dai\\.ly)\\//i.test(url)) return resolveDailymotion(url);
+  const html = await getText(url, { headers: { Referer: BASE + "/" } });
+  const media = parseSourceCandidates(html, url).find((item) => item.provider === "direct");
+  if (media) return streamForDirectUrl(media.url, url);
+  const captured = await capturePageStream(url);
+  if (captured) return captured;
+  throw new Error("El proveedor no publicó video directo");
+}
+
+function attachAlternatives(stream, candidates, currentUrl) {
+  const alternatives = [];
+  const seen = new Set([stream.url]);
+  for (const item of candidates) {
+    if (!item.url || item.url === currentUrl || seen.has(item.url)) continue;
+    seen.add(item.url);
+    if (item.provider === "direct" || item.provider === "r2") {
+      const direct = streamForDirectUrl(item.url, currentUrl);
+      if (direct) alternatives.push({ label: item.label, url: direct.url, mime: direct.mime, headers: direct.headers });
+    } else {
+      alternatives.push({ label: item.label, ref: "source:" + item.url });
+    }
+    if (alternatives.length === 8) break;
+  }
+  if (alternatives.length) stream.alternatives = alternatives;
+  return stream;
+}
+
 export async function resolve(ref) {
   const path = String(ref || "");
   let url = absolute(path.startsWith("/") ? path : "/" + path);
