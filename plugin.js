@@ -277,7 +277,7 @@ function parseEmbed(html, pageUrl) {
   let match;
   while ((match = re.exec(html))) {
     const url = absolute(match[2], pageUrl);
-    if (url && (/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url) ||
+    if (url && (/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url) || /(?:doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co)\//i.test(url) ||
       /(^|\/\/)([^/]+\.)?ok\.ru\/(?:video|videoembed)\//i.test(url) ||
       /(^|\/\/)([^/]+\.)?(?:dailymotion\.com|dai\.ly)\/(?:embed\/video|video)\//i.test(url))) return url;
   }
@@ -1063,7 +1063,7 @@ function isDirectMediaUrl(value) {
 function sourceHostAllowed(value) {
   try {
     const host = new URL(value).hostname.toLowerCase();
-    return /(?:^|\.)(?:dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|vk\.com|vkvideo\.ru|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
+    return /(?:^|\.)(?:dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|vk\.com|vkvideo\.ru|doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
   } catch { return false; }
 }
 
@@ -1176,7 +1176,7 @@ async function resolveDailymotion(url, referer) {
 async function resolveProviderUrl(providerUrl, referer, allowCapture) {
   const direct = directStream(providerUrl);
   if (direct) return direct;
-  if (/ok\.ru\/(?:video|videoembed)\//i.test(providerUrl)) {
+  if (/(?:ok\.ru\/(?:video|videoembed)|(?:doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co)\/)/i.test(providerUrl)) {
     try { return await resolveOkru(providerUrl); }
     catch (error) { log("No se pudo resolver OK.ru", error && error.message || String(error)); }
   }
