@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.44 conserva el catálogo existente y mejora la selección de fuentes: comprueba que las URLs HLS capturadas respondan con un manifiesto válido antes de entregarlas a Kino, registra cuándo detecta una respuesta que no es HLS y evita ofrecer un MP4/WebM fijo del mismo host como alternativa al HLS adaptativo. Las copias alternativas de otros hosts siguen disponibles en el menú «Servidor».
+La versión 0.1.45 restaura el resolver a una revisión anterior conocida para corregir el error de carga de Kino. Conserva la lógica previa de resolución de fuentes; los cambios recientes de validación de manifiestos HLS quedaron temporalmente retirados hasta poder probarlos en el runtime real de Kino.
 
 ## Estado del desarrollo
 
