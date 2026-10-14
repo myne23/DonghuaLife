@@ -1,7 +1,7 @@
 {
   "id": "donghualife-v2",
   "name": "DonghuaLife",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "apiVersion": 3,
   "entry": "plugin.js",
   "description": "Busca donghua, series de animación china y episodios en DonghuaLife.",
@@ -23,7 +23,8 @@
     "vkuser.net",
     "*.vkuser.net",
     "cdnvideo.ru",
-    "*.cdnvideo.ru"
+    "*.cdnvideo.ru",
+    "beta.donghualife.com"
   ],
   "capabilities": [
     "search",

@@ -14,29 +14,39 @@ function log(...args) {
 
 async function getText(url, options) {
   let lastError;
-  // DonghuaLife sometimes answers 502 when several requests arrive together. Retry transient
-  // gateway errors, especially for a series detail: otherwise Kino may fall back to global search.
+  const urls = [String(url)];
+  // El dominio principal devuelve 502 intermitentes desde el runtime de Kino aunque
+  // el mismo contenido esté disponible en beta. Probar ambos hosts evita dejar Inicio vacío.
+  if (String(url).startsWith(BASE)) {
+    const fallback = "https://beta.donghualife.com" + String(url).slice(BASE.length);
+    if (fallback !== String(url)) urls.push(fallback);
+  }
+  const headers = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+    ...(options && options.headers ? options.headers : {})
+  };
   for (let attempt = 0; attempt < 3; attempt++) {
-    let response;
-    try {
-      response = await kino.fetch(url, options);
-    } catch (error) {
-      lastError = error;
-      if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    for (const candidate of urls) {
+      let response;
+      try {
+        response = await kino.fetch(candidate, { ...(options || {}), headers });
+      } catch (error) {
+        lastError = error;
         continue;
       }
-      throw error;
+      if (response.ok) return response.text();
+      lastError = new Error("El sitio respondió " + response.status);
+      if (![502, 503, 504].includes(response.status)) throw lastError;
     }
-    if (response.ok) return response.text();
-    lastError = new Error("El sitio respondió " + response.status);
-    if (![502, 503, 504].includes(response.status) || attempt === 2) throw lastError;
-    // Back off briefly; immediate retries tend to hit the same gateway failure.
-    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    if (attempt < 2) {
+      // Back off before trying both hosts again; immediate retries often hit the same gateway error.
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
   }
   throw lastError || new Error("No se pudo leer la página");
 }
-
 function decodeHtml(value) {
   return String(value || "")
     .replace(/&quot;/gi, '"')
@@ -406,11 +416,11 @@ function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
     !latest.some((y) => y.id === x.id) && !vip.some((y) => y.id === x.id)).slice(0, MAX_HOME);
 
   return [
-    { id: "destacados", ref: "destacados", title: "Recomendados para vos", genre: "anime", items: featured },
-    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos episodios", genre: "anime", items: latest },
-    { id: "estrenos-vip", ref: "estrenos-vip", title: "Estrenos VIP", genre: "anime", items: vip },
-    { id: "tendencias", ref: "tendencias", title: "Tendencias", genre: "anime", items: trends },
-    { id: "series", ref: "series", title: "Todas las series", genre: "anime", items: allCatalog.slice(0, MAX_HOME) }
+    { id: "destacados", ref: "destacados", title: "DL 0.1.17 · Recomendados para vos", genre: "anime", items: featured },
+    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "DL 0.1.17 · Últimos episodios", genre: "anime", items: latest },
+    { id: "estrenos-vip", ref: "estrenos-vip", title: "DL 0.1.17 · Estrenos VIP", genre: "anime", items: vip },
+    { id: "tendencias", ref: "tendencias", title: "DL 0.1.17 · Tendencias", genre: "anime", items: trends },
+    { id: "series", ref: "series", title: "DL 0.1.17 · Todas las series", genre: "anime", items: allCatalog.slice(0, MAX_HOME) }
   ].filter((row) => row.items.length);
 }
 export async function home() {
@@ -479,6 +489,7 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
+  info.title = "DL 0.1.17 · " + info.title;
   return { series: info, episodes: list };
 }
 
