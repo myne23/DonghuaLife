@@ -142,4 +142,25 @@ globalThis.kino.fetch = async (input) => {
 };
 const okStream = await plugin.resolve('/watch/alpha-donghua-1-2');
 assert.equal(okStream.url,'https://v.okcdn.ru/video.mp4');
-console.log('Prueba simulada correcta: recomendaciones, últimos episodios, estrenos VIP, tendencias, catálogo, búsqueda, episodios y reproducción.');
+
+// El sitio puede devolver los 40 resultados en un único HTML, aunque Kino solo
+// muestre un lote. La paginación debe dividirlo en dos grupos de 20 sin duplicar.
+const overflowMoviesHtml = '<h2>Películas</h2><p>40 películas</p>' +
+  Array.from({length:40}, (_, i) => '<a href="/peliculas/movie-' + (i + 1) + '"><img alt="Movie ' + (i + 1) + '" src="/images/movie-' + (i + 1) + '.jpg"></a>').join('');
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url.startsWith('https://donghualife.com/peliculas')) {
+    return {ok:true,status:200,async text(){return overflowMoviesHtml;},async json(){return JSON.parse(overflowMoviesHtml);}};
+  }
+  throw new Error('URL inesperada en prueba de lotes de películas: ' + url);
+};
+const overflowPlugin = await import('../plugin.js?movie-overflow=3');
+const overflowPage1 = await overflowPlugin.browse('peliculas', null);
+assert.equal(overflowPage1.items.length, 20, 'Películas debe mostrar un lote de 20 aunque el HTML contenga 40');
+assert.equal(overflowPage1.items[0].title, 'Movie 1');
+assert.ok(overflowPage1.next, 'Debe ofrecer Ver más cuando quedan películas del total');
+const overflowPage2 = await overflowPlugin.browse('peliculas', overflowPage1.next);
+assert.equal(overflowPage2.items.length, 20, 'El segundo lote debe contener las 20 películas restantes');
+assert.equal(overflowPage2.items[0].title, 'Movie 21', 'La paginación debe continuar tras los primeros 20 sin repetir');
+assert.equal(overflowPage2.next, undefined, 'No debe ofrecer una tercera página cuando ya se alcanzaron las 40 películas');
+console.log('Prueba simulada correcta: recomendaciones, últimos episodios, tendencias, catálogo, búsqueda, episodios, reproducción y paginación de películas.');
