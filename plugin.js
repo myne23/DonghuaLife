@@ -1157,8 +1157,24 @@ async function resolveProviderUrl(providerUrl, referer, allowCapture) {
 }
 
 function addSourceAlternatives(stream, candidates, selectedUrl) {
-  const alternatives = candidates.filter((candidate) => candidate !== selectedUrl).slice(0, 8)
-    .map((candidate) => ({ label: sourceLabel(candidate), ref: "source:" + candidate }));
+  const alternatives = [];
+  const seen = new Set([selectedUrl, stream && stream.url].filter(Boolean));
+  for (const candidate of candidates) {
+    if (alternatives.length >= 8) break;
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    const label = sourceLabel(candidate);
+    // Una URL de video directa no necesita una segunda llamada a resolve().
+    // Entregarla como alternativa nativa evita que Kino tenga que volver a
+    // interpretar el proveedor y conserva el tipo MIME correcto.
+    const direct = directStream(candidate);
+    if (direct) {
+      alternatives.push({ label, url: direct.url, mime: direct.mime });
+    } else {
+      // Los embeds se resuelven de forma diferida solo si la persona los elige.
+      alternatives.push({ label, ref: "source:" + candidate });
+    }
+  }
   if (alternatives.length) stream.alternatives = alternatives;
   return stream;
 }
