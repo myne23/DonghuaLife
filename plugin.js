@@ -362,16 +362,37 @@ export async function browse(ref, cursor) {
   await null;
   const page = cursor ? Number(cursor) : 1;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
-  let url;
-  if (ref === "destacados" || ref === "tendencias") url = BASE + "/";
-  else if (ref === "ultimos-episodios") url = BASE + "/ultimos-episodios";
-  else if (ref === "series") url = SERIES + (page > 1 ? "?page=" + page : "");
-  else throw kino.error("not_found", "La categoría solicitada no existe");
-  let html = await getText(url);
-  if (ref === "destacados") html = sectionSlice(html, "(?:te recomendamos para vos|recomendados|destacados)", 65000) || html;
-  if (ref === "tendencias") html = sectionSlice(html, "tendencias", 45000) || html;
-  const items = unique(parseSeries(html));
-  return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+
+  if (ref === "ultimos-episodios") {
+    // Esta página enlaza principalmente a /watch/, no a /series/. Usar parseSeries()
+    // dejaba "Ver más" vacío aunque la fila de inicio tuviera contenido.
+    const html = await getText(BASE + "/ultimos-episodios");
+    let items = unique(parseLatestSeries(html));
+    if (!items.length) {
+      const homeHtml = await getText(BASE + "/");
+      items = unique(parseLatestSeries(homeHtml));
+    }
+    return { items: items.slice(0, MAX_PAGE) };
+  }
+
+  if (ref === "destacados" || ref === "tendencias") {
+    // Reutilizar exactamente la misma selección que home() evita que "Ver más"
+    // muestre el catálogo entero cuando no se detecta el encabezado de una sección.
+    const homeHtml = await getText(BASE + "/");
+    const latestHtml = await getText(BASE + "/ultimos-episodios").catch(() => "");
+    const catalogHtml = await getText(SERIES).catch(() => "");
+    const rows = parseHomeRows(homeHtml, latestHtml, catalogHtml);
+    const row = rows.find((entry) => entry.id === ref);
+    return { items: row ? row.items : [] };
+  }
+
+  if (ref === "series") {
+    const html = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
+    const items = unique(parseSeries(html));
+    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+  }
+
+  throw kino.error("not_found", "La categoría solicitada no existe");
 }
 
 export async function episodes(ref) {
