@@ -24,8 +24,8 @@ const catalogHtml = [
 ].join('');
 const catalogPageTwoHtml = '<article><span>En Emisión</span><a href="/series/delta"><img alt="Delta Donghua" src="/images/delta.jpg"></a></article>';
 const trendsPageTwoHtml = '<article><a href="/series/eta"><img alt="Eta Donghua" src="/images/eta.jpg"></a></article>';
-const moviesHtml = '<h2>Pelis Donghuas</h2><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a><a href="/peliculas?page=2">2</a>';
-const moviesPageTwoHtml = '<h2>Películas</h2><a href="/peliculas/movie-two"><img alt="Movie Two" src="/images/movie-two.jpg"></a><a href="/peliculas?page=1">1</a><a href="/peliculas?page=2">2</a>';
+const moviesHtml = '<h2>Películas</h2><p>2 películas</p><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a>';
+const moviesPageTwoHtml = '<h2>Películas</h2><p>2 películas</p><a href="/peliculas/movie-two"><img alt="Movie Two" src="/images/movie-two.jpg"></a>';
 const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a><img alt="Peli Ep 151- 152" src="/images/special.jpg"><a href="/watch/el-inmortal-renegado-temporada-152-1"><span>Capítulo 152</span></a>';
 const directWatch = '<video src="https://cdn.example.test/video.mp4"></video>';
 const metadata = JSON.stringify({videos:[{name:'hd',url:'https://v.okcdn.ru/video.mp4'}]});
@@ -115,12 +115,18 @@ const pageB2 = await plugin.browse('tendencias', pageB.next);
 assert.equal(pageB2.items[0].title, 'Eta Donghua', 'Tendencias debe continuar con títulos nuevos y no repetir la fila de portada');
 const found = await plugin.search('Alpha');
 assert.ok(found.length >= 1);
+const alphaDetailRequestsBefore = fetchCalls.filter((url) => url === 'https://donghualife.com/series/alpha').length;
 const episodes = await plugin.episodes('alpha');
 assert.equal(episodes.episodes.length,3, 'El especial no debe mezclarse con los episodios normales');
 assert.equal(episodes.seasons[1].title, 'Peli Ep 151- 152', 'El selector debe conservar el nombre exacto del especial que muestra la web');
 const specialEpisodes = await plugin.episodes('special-peli:alpha');
 assert.equal(specialEpisodes.episodes.length, 1);
 assert.equal(specialEpisodes.episodes[0].title, 'Peli Ep 151- 152');
+assert.equal(
+  fetchCalls.filter((url) => url === 'https://donghualife.com/series/alpha').length - alphaDetailRequestsBefore,
+  1,
+  'Cambiar entre Temporada 1 y el especial debe reutilizar la ficha ya cargada'
+);
 
 assert.equal(episodes.episodes[1].number,2);
 assert.equal(episodes.episodes[2].number,3);
