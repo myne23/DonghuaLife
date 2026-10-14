@@ -16,6 +16,7 @@ const homeHtml = [
   '<h3><a href="/series/zeta"><img alt="Zeta Donghua" src="/images/zeta.jpg"></a></h3>'
 ].join('');
 const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-temporada-1-5"><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a>';
+const latestPageTwoHtml = '<a href="/watch/new-episode-donghua-1-6"><img alt="New Episode Donghua" src="/images/new.jpg"><span>Capítulo 6</span></a>';
 const catalogHtml = [
   '<article><span>Finalizado</span><a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a></article>',
   '<article><span>En Emisión</span><a href="/series/beta"><img alt="Beta Donghua" src="/images/beta.jpg"></a></article>',
@@ -23,7 +24,8 @@ const catalogHtml = [
 ].join('');
 const catalogPageTwoHtml = '<article><span>En Emisión</span><a href="/series/delta"><img alt="Delta Donghua" src="/images/delta.jpg"></a></article>';
 const moviesHtml = '<h2>Pelis Donghuas</h2><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a>';
-const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a>';
+const moviesPageTwoHtml = '<h2>Películas</h2><a href="/peliculas/movie-two"><img alt="Movie Two" src="/images/movie-two.jpg"></a>';
+const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a><a href="/watch/el-inmortal-renegado-peli-151-152">Peli 151-152</a>';
 const directWatch = '<video src="https://cdn.example.test/video.mp4"></video>';
 const metadata = JSON.stringify({videos:[{name:'hd',url:'https://v.okcdn.ru/video.mp4'}]});
 const playerOptions = JSON.stringify({flashvars:{metadata}}).replace(/"/g,'&quot;');
@@ -38,8 +40,8 @@ globalThis.kino = {
     fetchCalls.push(url);
     let body = '';
     if (url === 'https://donghualife.com/' || url === 'https://donghualife.com') body = homeHtml;
-    else if (url.startsWith('https://donghualife.com/movies')) body = moviesHtml;
-    else if (url === 'https://donghualife.com/ultimos-episodios') body = latestHtml;
+    else if (url.startsWith('https://donghualife.com/peliculas')) body = /[?&]page=\d+/.test(url) ? moviesPageTwoHtml : moviesHtml;
+    else if (url.startsWith('https://donghualife.com/ultimos-episodios')) body = /[?&]page=\d+/.test(url) ? latestPageTwoHtml : latestHtml;
     else if (url.startsWith('https://donghualife.com/series/alpha')) body = seriesHtml;
     else if (url.startsWith('https://donghualife.com/series?') && url.includes('page=2')) body = catalogPageTwoHtml;
     else if (url.startsWith('https://donghualife.com/series?') && url.includes('page=3')) body = catalogPageTwoHtml;
@@ -87,12 +89,27 @@ assert.equal(pageA2.items[0].title, 'Delta Donghua', 'El cursor debe cargar resu
 assert.equal(JSON.parse(pageA2.next).page, 3, 'Debe seguir ofreciendo páginas mientras lleguen resultados nuevos');
 const pageA3 = await plugin.browse('catalogo-az', pageA2.next);
 assert.deepEqual(pageA3.items, [], 'Si el sitio ignora page=N y repite resultados, el plugin debe detenerse para evitar duplicados');
+const pageMovies = await plugin.browse('peliculas', null);
+assert.equal(pageMovies.items[0].title, 'Movie One');
+assert.equal(JSON.parse(pageMovies.next).page, 2, 'Películas debe ofrecer una segunda página');
+const pageMovies2 = await plugin.browse('peliculas', pageMovies.next);
+assert.equal(pageMovies2.items[0].title, 'Movie Two', 'Películas debe cargar títulos nuevos');
+const pageMovies3 = await plugin.browse('peliculas', pageMovies2.next);
+assert.deepEqual(pageMovies3.items, [], 'Películas debe cortar si la web repite la última página');
+const pageLatest = await plugin.browse('ultimos-episodios', null);
+assert.equal(pageLatest.items[0].title, 'Gamma Donghua');
+assert.equal(JSON.parse(pageLatest.next).page, 2, 'Últimos episodios debe ofrecer otra página');
+const pageLatest2 = await plugin.browse('ultimos-episodios', pageLatest.next);
+assert.equal(pageLatest2.items[0].title, 'New Episode Donghua', 'Últimos episodios debe cargar títulos nuevos');
+const pageLatest3 = await plugin.browse('ultimos-episodios', pageLatest2.next);
+assert.deepEqual(pageLatest3.items, [], 'Últimos episodios debe cortar si la web repite la última página');
 const pageB = await plugin.browse('tendencias', '1');
 assert.ok(pageB.items.length > 0);
 const found = await plugin.search('Alpha');
 assert.ok(found.length >= 1);
 const episodes = await plugin.episodes('alpha');
-assert.equal(episodes.episodes.length,3);
+assert.equal(episodes.episodes.length,3, 'Los enlaces de películas no deben convertirse en temporadas o episodios');
+
 assert.equal(episodes.episodes[1].number,2);
 assert.equal(episodes.episodes[2].number,3);
 const stream = await plugin.resolve('/watch/alpha-donghua-1-1');
