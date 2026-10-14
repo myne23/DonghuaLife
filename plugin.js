@@ -108,7 +108,7 @@ function parseSeries(html) {
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src") ||
       /(?:background-image)\s*:\s*url\((["']?)([^)"']+)\1\)/i.exec(match[0])?.[2] || "";
     const candidate = {
-      id: slug, ref: SERIES + "/" + slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
+      id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
       kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
       backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"]
     };
@@ -125,7 +125,7 @@ function parseSeries(html) {
     const slug = slugFromUrl(absolute(heroLink[2]));
     if (slug && !bySlug.has(slug)) {
       const image = ogImage ? absolute(ogImage[1]) : "";
-      bySlug.set(slug, { id: slug, ref: SERIES + "/" + slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
+      bySlug.set(slug, { id: slug, ref: slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
         poster: image || undefined, backdrop: image || undefined, genres: ["anime"] });
     }
   }
@@ -363,7 +363,7 @@ function parseLatestSeries(html) {
     if (seen.has(slug)) continue;
     out.push({
       id: slug,
-      ref: seriesLink ? absolute(seriesLink[2]) : SERIES + "/" + slug,
+      ref: slug,
       title: title.slice(0, 200),
       kind: "series",
       poster: posterRaw ? absolute(posterRaw) : undefined,
