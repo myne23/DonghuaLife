@@ -1,0 +1,30 @@
+name: Diagnóstico Kino SDK
+
+on:
+  push:
+    branches: [diagnostico-sdk]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout DonghuaLife
+        uses: actions/checkout@v4
+      - name: Checkout SDK oficial de Kino
+        uses: actions/checkout@v4
+        with:
+          repository: kinotvapp/kino-plugin-archive
+          path: kino-sdk
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validar contrato y manifiesto
+        run: node kino-sdk/sdk/validate.mjs .
+      - name: Probar Inicio con datos reales
+        run: node kino-sdk/sdk/run.mjs ./plugin.js home
+      - name: Probar búsqueda real
+        run: node kino-sdk/sdk/run.mjs ./plugin.js search "Against Sky Supreme"
+      - name: Probar episodios de una serie real
+        run: node kino-sdk/sdk/run.mjs ./plugin.js episodes "https://donghualife.com/series/against-sky-supreme"
