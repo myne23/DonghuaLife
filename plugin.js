@@ -404,8 +404,14 @@ function parseFinishedSeries(html) {
   return unique(parseSeries(source)).filter((item) => {
     const at = source.indexOf(item.ref);
     if (at < 0) return false;
-    const nearby = source.slice(Math.max(0, at - 900), Math.min(source.length, at + 1800));
-    return /finalizad[oa]|completad[oa]|terminad[oa]/i.test(textOf(nearby));
+    const nearby = source.slice(Math.max(0, at - 260), Math.min(source.length, at + 260));
+    let closest = Infinity;
+    const status = /finalizad[oa]|completad[oa]|terminad[oa]/gi;
+    let match;
+    while ((match = status.exec(nearby))) {
+      closest = Math.min(closest, Math.abs((Math.max(0, at - 260) + match.index) - at));
+    }
+    return closest <= 110;
   });
 }
 
