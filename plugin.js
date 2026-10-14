@@ -417,7 +417,7 @@ function parseFinishedSeries(html) {
     while ((match = status.exec(nearby))) {
       closest = Math.min(closest, Math.abs((from + match.index) - at));
     }
-    return closest <= 110;
+    return closest <= 650;
   });
 }
 
@@ -471,7 +471,7 @@ export async function home() {
   catch (e) { log("No se pudo cargar el Inicio del sitio", e.message); }
   try { catalogHtml = await getText(SERIES + "?sort=az", { fast: true }); }
   catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
-  try { moviesHtml = await getText(BASE + "/index.php/", { fast: true }); }
+  try { moviesHtml = await getText(BASE + "/movies?page=0", { fast: true }); }
   catch (e) { log("No se pudo cargar la sección de películas", e.message); }
 
   const catalog = unique(parseSeries(catalogHtml));
@@ -531,7 +531,7 @@ export async function browse(ref, cursor) {
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
 
   if (ref === "peliculas") {
-    const html = await getText(BASE + "/index.php/" + (page > 1 ? "?page=" + (page - 1) : ""));
+    const html = await getText(BASE + "/movies?page=" + (page - 1));
     const items = parseMovieItems(html);
     return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
   }
