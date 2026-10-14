@@ -1212,18 +1212,19 @@ async function capturePageStream(url) {
 
 export async function resolve(ref) {
   const path = String(ref || "");
+  // Las referencias de servidores son URLs absolutas y deben tratarse antes de
+  // normalizar las referencias de episodios, para no convertirlas en rutas locales.
+  if (path.startsWith("source:")) {
+    const sourceUrl = String(path.slice(7));
+    if (!sourceUrl || !/^https:\/\//i.test(sourceUrl) || !sourceHostAllowed(sourceUrl)) {
+      throw kino.error("not_found", "El servidor de video no es válido");
+    }
+    const stream = await resolveProviderUrl(sourceUrl, BASE + "/", true);
+    if (stream) return stream;
+    throw kino.error("unavailable", "El proveedor no expuso una fuente compatible con Kino");
+  }
   let url = absolute(path.startsWith("/") ? path : "/" + path);
   if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
-    // Las referencias internas de servidor se resuelven solo dentro de la ficha de episodio.
-    if (path.startsWith("source:")) {
-      const sourceUrl = String(path.slice(7));
-      if (!sourceUrl || !/^https:\/\//i.test(sourceUrl) || !sourceHostAllowed(sourceUrl)) {
-        throw kino.error("not_found", "El servidor de video no es válido");
-      }
-      const stream = await resolveProviderUrl(sourceUrl, BASE + "/", true);
-      if (stream) return stream;
-      throw kino.error("unavailable", "El proveedor no expuso una fuente compatible con Kino");
-    }
     throw kino.error("not_found", "El episodio o película no es válido");
   }
   let html = await getText(url);
