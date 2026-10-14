@@ -151,6 +151,13 @@ globalThis.kino.browser = {
     };
   }
 };
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === 'https://donghualife.com/watch/alpha-donghua-1-1') {
+    return {ok:true,status:200,async text(){return '<html><h1>Player</h1></html>';},async json(){return {};}};
+  }
+  throw new Error('URL inesperada en prueba de captura: ' + url);
+};
 const capturePlugin = await import('../plugin.js?browser-capture-test=1');
 const captured = await capturePlugin.resolve('/watch/alpha-donghua-1-1');
 assert.equal(captured.url,'https://cdn.example.test/playlist.m3u8','La captura debe priorizar HLS frente a MP4');
