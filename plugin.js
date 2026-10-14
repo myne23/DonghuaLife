@@ -13,9 +13,24 @@ function log(...args) {
 }
 
 async function getText(url, options) {
-  const response = await kino.fetch(url, options);
-  if (!response.ok) throw new Error("El sitio respondió " + response.status);
-  return response.text();
+  let lastError;
+  // DonghuaLife sometimes answers 502 when several requests arrive together. Retry transient
+  // gateway errors, especially for a series detail: otherwise Kino may fall back to global search.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await kino.fetch(url, options);
+      if (response.ok) return await response.text();
+      lastError = new Error("El sitio respondió " + response.status);
+      if (![502, 503, 504].includes(response.status)) throw lastError;
+    } catch (error) {
+      lastError = error;
+      const status = Number(error && error.status);
+      if (status && ![502, 503, 504].includes(status)) throw error;
+    }
+    // Yield between retries so the next request is not issued in the same microtask turn.
+    await Promise.resolve();
+  }
+  throw lastError || new Error("No se pudo leer la página");
 }
 
 function decodeHtml(value) {
@@ -396,14 +411,17 @@ function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
 }
 export async function home() {
   await null;
-  const results = await Promise.all([
-    getText(BASE + "/").catch((e) => { log("Falló el inicio", e.message); return ""; }),
-    getText(BASE + "/ultimos-episodios").catch((e) => { log("Falló últimos episodios", e.message); return ""; }),
-    getText(SERIES).catch((e) => { log("Falló el catálogo", e.message); return ""; })
-  ]);
-  let homeHtml = results[0];
-  const latestHtml = results[1];
-  const catalogHtml = results[2];
+  // Keep these requests sequential: the site intermittently returns 502 when its homepage,
+  // latest episodes and catalog are fetched in parallel from the same client.
+  let homeHtml = "";
+  let latestHtml = "";
+  let catalogHtml = "";
+  try { homeHtml = await getText(BASE + "/"); }
+  catch (e) { log("Falló el inicio", e.message); }
+  try { latestHtml = await getText(BASE + "/ultimos-episodios"); }
+  catch (e) { log("Falló últimos episodios", e.message); }
+  try { catalogHtml = await getText(SERIES); }
+  catch (e) { log("Falló el catálogo", e.message); }
   if (!homeHtml) homeHtml = catalogHtml;
   const rows = parseHomeRows(homeHtml, latestHtml, catalogHtml);
   if (rows.length) return rows;
