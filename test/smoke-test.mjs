@@ -237,4 +237,39 @@ const aliasPlugin = await import('../plugin.js?catalog-alias=1');
 const shroudingEpisodes = await aliasPlugin.episodes('shrouding-the-heavens');
 assert.equal(shroudingEpisodes.series.title, 'Shrouding the Heavens');
 assert.equal(shroudingEpisodes.episodes.length, 1, 'La ficha canónica debe devolver los capítulos sin error');
-console.log('Prueba simulada correcta: catálogo, búsqueda, episodios, reproducción, paginación de películas y recuperación de fichas con slug antiguo.');
+
+ // Las temporadas deben seguir la distribución real de la ficha: 53, 52, 52 y 29.
+const seasonFixture = (season, count) => '<h1>Shrouding the Heavens</h1><h2>Sinopsis</h2><p>Una aventura.</p>' +
+  Array.from({length:count}, (_, i) => '<a href="/watch/shrouding-heavens-' + season + '-' + (i + 1) + '">Capítulo ' + (i + 1) + '</a>').join('');
+const seasonPlugin = await import('../plugin.js?seasons-regression=1');
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === 'https://donghualife.com/series/shrouding-heavens') {
+    const body = '<h1>Shrouding the Heavens</h1><p>4 Temporadas</p>' + seasonFixture(1, 53);
+    return {ok:true,status:200,async text(){return body;},async json(){return {};}};
+  }
+  const match = /^https:\/\/donghualife\.com\/watch\/shrouding-heavens-(\d+)-1$/.exec(url);
+  if (match) {
+    const counts = {1:53, 2:52, 3:52, 4:29};
+    const season = Number(match[1]);
+    const body = seasonFixture(season, counts[season]);
+    return {ok:true,status:200,async text(){return body;},async json(){return {};}};
+  }
+  throw new Error('URL inesperada en prueba de temporadas: ' + url);
+};
+const seasonOne = await seasonPlugin.episodes('shrouding-heavens');
+assert.equal(seasonOne.seasons.length, 4, 'Debe exponer las cuatro temporadas declaradas por la web');
+assert.deepEqual(seasonOne.seasons.map((item) => item.title), ['Temporada 1','Temporada 2','Temporada 3','Temporada 4']);
+assert.equal(seasonOne.episodes.length, 53, 'La temporada 1 debe conservar sus 53 episodios');
+assert.equal(seasonOne.seasons.filter((item) => item.current).length, 1);
+assert.equal(seasonOne.seasons[0].current, true);
+const seasonTwo = await seasonPlugin.episodes(seasonOne.seasons[1].ref);
+assert.equal(seasonTwo.episodes.length, 52, 'La temporada 2 debe mostrar solo sus 52 episodios');
+assert.ok(seasonTwo.episodes.every((item) => item.season === 2), 'La temporada 2 no debe mezclar capítulos de otras temporadas');
+assert.equal(seasonTwo.seasons.find((item) => item.number === 2).current, true);
+const seasonFour = await seasonPlugin.episodes(seasonOne.seasons[3].ref);
+assert.equal(seasonFour.episodes.length, 29, 'La temporada 4 debe mostrar solo sus 29 episodios');
+assert.ok(seasonFour.episodes.every((item) => item.season === 4), 'La temporada 4 no debe mezclar capítulos de otras temporadas');
+assert.equal(seasonFour.seasons.find((item) => item.number === 4).current, true);
+
+console.log('Prueba simulada correcta: catálogo, búsqueda, episodios, reproducción, paginación de películas, recuperación de fichas y separación de temporadas.');
