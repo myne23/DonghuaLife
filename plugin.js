@@ -262,10 +262,10 @@ function parseEpisodes(html, pageUrl) {
     label = specialMovie ? label.trim() : label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
     if (specialMovie) {
       // Preservar literalmente el rótulo de la tarjeta, no convertir el especial en temporada 152.
-    } else if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
-      label = "Capítulo " + number;
     } else {
-      label = "Capítulo " + number + " · " + label;
+      // En las fichas de temporada, los enlaces pueden incluir texto vecino
+      // como «Temporada 1» o «siguiente». El número de la ruta es la fuente fiable.
+      label = "Capítulo " + number;
     }
     out.push({ season, number, ref: path, title: label.slice(0, 180), specialMovie });
     seen.add(path);

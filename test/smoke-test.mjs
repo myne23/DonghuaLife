@@ -240,7 +240,8 @@ assert.equal(shroudingEpisodes.episodes.length, 1, 'La ficha canónica debe devo
 
  // Las temporadas deben seguir la distribución real de la ficha: 53, 52, 52 y 29.
 const seasonFixture = (season, count) => '<h1>Shrouding the Heavens</h1><h2>Sinopsis</h2><p>Una aventura.</p>' +
-  Array.from({length:count}, (_, i) => '<a href="/watch/shrouding-heavens-' + season + '-' + (i + 1) + '">Capítulo ' + (i + 1) + '</a>').join('');
+  Array.from({length:count}, (_, i) => '<a href="/watch/shrouding-heavens-' + season + '-' + (i + 1) + '">' +
+    (season === 2 && i === 0 ? 'Capítulo 1 Temporada 1' : season === 2 && i === 1 ? 'Capítulo 2 siguiente' : 'Capítulo ' + (i + 1)) + '</a>').join('');
 const seasonPlugin = await import('../plugin.js?seasons-regression=1');
 globalThis.kino.fetch = async (input) => {
   const url = String(input);
@@ -266,6 +267,8 @@ assert.equal(seasonOne.seasons[0].current, true);
 const seasonTwo = await seasonPlugin.episodes(seasonOne.seasons[1].ref);
 assert.equal(seasonTwo.episodes.length, 52, 'La temporada 2 debe mostrar solo sus 52 episodios');
 assert.ok(seasonTwo.episodes.every((item) => item.season === 2), 'La temporada 2 no debe mezclar capítulos de otras temporadas');
+assert.equal(seasonTwo.episodes[0].title, 'Capítulo 1', 'El primer capítulo de temporada no debe arrastrar el texto «Temporada 1»');
+assert.equal(seasonTwo.episodes[1].title, 'Capítulo 2', 'Los capítulos no deben arrastrar etiquetas vecinas como «siguiente»');
 assert.equal(seasonTwo.seasons.find((item) => item.number === 2).current, true);
 const seasonFour = await seasonPlugin.episodes(seasonOne.seasons[3].ref);
 assert.equal(seasonFour.episodes.length, 29, 'La temporada 4 debe mostrar solo sus 29 episodios');
