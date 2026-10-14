@@ -188,11 +188,16 @@ function parseEpisodes(html, pageUrl) {
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
     if (seen.has(path)) continue;
+    // Algunas fichas colocan una película junto a los episodios con un enlace como
+    // "Peli 151-152". No es una temporada: la película se lista en el catálogo Películas.
+    const linkLabel = textOf(match[3]);
+    if (/\b(?:peli(?:cula)?|movie|film)\b/i.test(linkLabel + " " + path)) continue;
     // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
     const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
       /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
     if (!m) continue;
+
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
     let label = textOf(match[3]);
@@ -521,7 +526,7 @@ export async function home() {
   catch (e) { log("No se pudo cargar el Inicio del sitio", e.message); }
   try { catalogHtml = await getText(SERIES + "?sort=az", { fast: true }); }
   catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
-  try { moviesHtml = await getText(BASE + "/movies?page=0", { fast: true }); }
+  try { moviesHtml = await getText(BASE + "/peliculas", { fast: true }); }
   catch (e) {
     log("No se pudo cargar el catálogo directo de películas", e.message);
     try { moviesHtml = await getText(BASE + "/genres/Acción", { fast: true }); }
@@ -586,18 +591,14 @@ export async function browse(ref, cursor) {
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
 
   if (ref === "peliculas") {
-    let html = "";
-    try { html = await getText(BASE + "/movies?page=" + (page - 1)); }
-    catch (e) {
-      if (page !== 1) throw e;
-      html = await getText(BASE + "/genres/Acción");
-    }
+    const url = BASE + "/peliculas" + (page > 1 ? "?page=" + page : "");
+    const html = await getText(url);
     const items = parseMovieItems(html).slice(0, MAX_PAGE);
     return pagedResult(items, page, cursorState.previous);
   }
 
   if (ref === "ultimos-episodios") {
-    const url = BASE + "/ultimos-episodios" + (page > 1 ? "?page=" + (page - 1) : "");
+    const url = BASE + "/ultimos-episodios" + (page > 1 ? "?page=" + page : "");
     const latestHtml = await getText(url);
     const catalogHtml = await getText(SERIES + "?sort=az");
     const catalog = unique(parseSeries(catalogHtml));
@@ -626,7 +627,7 @@ export async function browse(ref, cursor) {
     let lastRawCount = 0;
     // A source page may contain few finished titles even while the catalog has more pages.
     for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_HOME; checked++, sourcePage++) {
-      const html = await getText(SERIES + "?sort=az" + (sourcePage > 1 ? "&page=" + sourcePage : ""));
+      const html = await getText(SERIES + "?sort=az&status=finalizadas" + (sourcePage > 1 ? "&page=" + sourcePage : ""));
       const raw = unique(parseSeries(html));
       lastRawCount = raw.length;
       if (!raw.length) break;
