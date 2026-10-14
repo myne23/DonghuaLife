@@ -319,15 +319,45 @@ async function resolveOkru(embedUrl) {
     if (/480|sd/.test(quality)) return 2;
     return 3;
   };
+  const directVideo = (v) => typeof v.url === "string" && /^https:\/\//i.test(v.url) && /\.(?:mp4|webm)(?:[?#]|$)/i.test(v.url);
   videos.sort((a, b) => rank(a) - rank(b));
-  const direct = videos.find((v) => typeof v.url === "string" && /^https:\/\//i.test(v.url) && /\.(?:mp4|webm)(?:[?#]|$)/i.test(v.url));
-  if (direct) return { url: direct.url, mime: /\.webm(?:[?#]|$)/i.test(direct.url) ? "video/webm" : "video/mp4", headers: { Referer: OK + "/", Origin: OK } };
+  const headers = { Referer: OK + "/", Origin: OK };
+  const videoAlternatives = (selectedUrl) => videos.filter((v) => directVideo(v) && v.url !== selectedUrl)
+    .slice(0, 7).map((v) => ({
+      url: v.url,
+      mime: /\.webm(?:[?#]|$)/i.test(v.url) ? "video/webm" : "video/mp4",
+      headers,
+      label: ("OK.ru · " + String(v.name || v.quality || "Video")).slice(0, 48)
+    }));
+  const direct = videos.find(directVideo);
   const hls = metadata && (metadata.hlsMasterPlaylistUrl || metadata.hlsManifestUrl || metadata.ondemandHls || metadata.hlsMasterUrl);
+  if (direct) {
+    const result = {
+      url: direct.url,
+      mime: /\.webm(?:[?#]|$)/i.test(direct.url) ? "video/webm" : "video/mp4",
+      headers,
+      label: ("OK.ru · " + String(direct.name || direct.quality || "Video")).slice(0, 48)
+    };
+    result.alternatives = videoAlternatives(direct.url);
+    if (typeof hls === "string" && /^https:\/\//i.test(hls) && hls !== direct.url) {
+      result.alternatives.push({ url: hls, mime: "application/vnd.apple.mpegurl", headers, label: "OK.ru · HLS" });
+    }
+    if (!result.alternatives.length) delete result.alternatives;
+    return result;
+  }
   if (typeof hls === "string" && /^https:\/\//i.test(hls)) {
-    return { url: hls, mime: "application/vnd.apple.mpegurl", headers: { Referer: OK + "/", Origin: OK } };
+    const result = { url: hls, mime: "application/vnd.apple.mpegurl", headers, label: "OK.ru · HLS" };
+    result.alternatives = videoAlternatives(hls);
+    if (!result.alternatives.length) delete result.alternatives;
+    return result;
   }
   const other = videos.find((v) => typeof v.url === "string" && /^https:\/\//i.test(v.url));
-  if (other) return { url: other.url, mime: "video/mp4", headers: { Referer: OK + "/", Origin: OK } };
+  if (other) {
+    const result = { url: other.url, mime: "video/mp4", headers, label: "OK.ru · Video" };
+    result.alternatives = videoAlternatives(other.url);
+    if (!result.alternatives.length) delete result.alternatives;
+    return result;
+  }
   throw new Error("OK.ru no ofreció una fuente compatible");
 }
 
