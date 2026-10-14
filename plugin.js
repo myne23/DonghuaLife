@@ -390,80 +390,120 @@ function parseLatestSeries(html) {
   }
   return out;
 }
-function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
-  const allHome = unique(parseSeries(homeHtml));
-  const allCatalog = unique(parseSeries(catalogHtml || ""));
-  const allAvailable = unique(allCatalog.concat(allHome));
-
-  // Extraer cada carrusel por su encabezado real. sectionSlice ignora los h3 de las
-  // tarjetas, que antes podían truncar cada sección después del primer elemento.
-  const latestSection = sectionSlice(homeHtml, "últimos episodios", 60000);
-  const vipSection = sectionSlice(homeHtml, "estrenos vip", 60000);
-  const featuredSection = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
-  const trendsSection = sectionSlice(homeHtml, "tendencias", 45000);
-
-  let featured = unique(parseSeries(featuredSection));
-  if (featured.length < 3) featured = allHome.slice(0, 10);
-  featured = featured.slice(0, MAX_HOME);
-
-  // Priorizar los episodios visibles en Inicio; la página separada queda como respaldo.
-  let latest = unique(parseLatestSeries(latestSection));
-  if (latest.length < 3) latest = unique(latest.concat(parseLatestSeries(latestHtml || "")));
-  if (!latest.length) latest = unique(parseLatestSeries(homeHtml));
-  latest = latest.filter((x) => !featured.some((y) => y.id === x.id)).slice(0, MAX_HOME);
-
-  let vip = unique(parseLatestSeries(vipSection));
-  vip = vip.filter((x) => !featured.some((y) => y.id === x.id) &&
-    !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
-
-  let trends = unique(parseSeries(trendsSection));
-  if (trends.length < 3) trends = allAvailable;
-  trends = trends.filter((x) => !featured.some((y) => y.id === x.id) &&
-    !latest.some((y) => y.id === x.id) && !vip.some((y) => y.id === x.id)).slice(0, MAX_HOME);
-
-  return [
-    { id: "destacados", ref: "destacados", title: "DL 0.1.17 · Recomendados para vos", items: featured },
-    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "DL 0.1.17 · Últimos episodios", items: latest },
-    { id: "estrenos-vip", ref: "estrenos-vip", title: "DL 0.1.17 · Estrenos VIP", items: vip },
-    { id: "tendencias", ref: "tendencias", title: "DL 0.1.17 · Tendencias", items: trends },
-    { id: "series", ref: "series", title: "DL 0.1.17 · Todas las series", items: allCatalog.slice(0, MAX_HOME) }
-  ].filter((row) => row.items.length);
-}
 function splitCatalog(catalogHtml) {
   const items = unique(parseSeries(catalogHtml)).slice().sort((a, b) =>
     normalizeSearch(a.title).localeCompare(normalizeSearch(b.title))
   );
   if (items.length < 2) return { first: items, second: [] };
-  // La mitad alfabética de un catálogo real puede quedar vacía; dividir por orden
-  // de título garantiza dos carruseles útiles incluso si el sitio concentra sus títulos.
   const middle = Math.ceil(items.length / 2);
   return { first: items.slice(0, middle), second: items.slice(middle) };
 }
 
+function parseFinishedSeries(html) {
+  const source = String(html || "");
+  const lowerSource = source.toLowerCase();
+  return unique(parseSeries(source)).filter((item) => {
+    const needle = ("/series/" + item.ref).toLowerCase();
+    let searchFrom = 0;
+    while (searchFrom < lowerSource.length) {
+      const at = lowerSource.indexOf(needle, searchFrom);
+      if (at < 0) return false;
+      searchFrom = at + needle.length;
+      const cardStart = source.lastIndexOf("<article", at);
+      const cardEnd = source.indexOf("</article>", at);
+      if (cardStart >= 0 && cardEnd > at) {
+        if (/finalizad[oa]|completad[oa]|terminad[oa]/i.test(source.slice(cardStart, cardEnd + 10))) return true;
+        continue;
+      }
+      const from = Math.max(0, at - 700);
+      const nearby = source.slice(from, Math.min(source.length, at + 350));
+      let closest = Infinity;
+      const status = /finalizad[oa]|completad[oa]|terminad[oa]/gi;
+      let match;
+      while ((match = status.exec(nearby))) {
+        closest = Math.min(closest, Math.abs((from + match.index) - at));
+      }
+      if (closest <= 650) return true;
+    }
+    return false;
+  });
+}
+function parseMovieItems(html) {
+  const source = String(html || "");
+  const section = sectionSlice(source, "(?:pel[ií]culas|pelis\\s+donghuas|donghua\\s+movies)", 70000) || source;
+  const out = [];
+  const seen = new Set();
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = re.exec(section)) && out.length < MAX_PAGE) {
+    const url = absolute(match[2]);
+    let path = "";
+    try { path = new URL(url).pathname; } catch { continue; }
+    const segments = path.split("/").filter(Boolean);
+    if (seen.has(path) || segments.length < 2 || /\/(?:series|watch)\//i.test(path) ||
+        /\/(?:peliculas?|movies?|index\.php)\/?$/i.test(path)) continue;
+    const imgMatch = /<img\b[^>]*>/i.exec(match[3]);
+    const img = imgMatch ? imgMatch[0] : "";
+    const title = attr(img, "alt") || attr(img, "title") || textOf(match[3]);
+    if (!title || /^(ver ahora|detalles|play)$/i.test(title)) continue;
+    const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
+    const slug = path.split("/").filter(Boolean).pop();
+    out.push({ id: slug, ref: path, title: title.slice(0, 200), kind: "movie",
+      poster: posterRaw ? absolute(posterRaw) : undefined,
+      backdrop: posterRaw ? absolute(posterRaw) : undefined });
+    seen.add(path);
+  }
+  return out;
+}
+
+function mapToCatalog(parsed, catalog) {
+  const normalized = catalog.map((item) => ({ item, title: normalizeSearch(item.title) }));
+  const result = [];
+  for (const candidate of parsed) {
+    const title = normalizeSearch(candidate.title);
+    const found = normalized.find((entry) => entry.title === title ||
+      (title.length > 5 && entry.title.includes(title)) ||
+      (entry.title.length > 5 && title.includes(entry.title)));
+    const item = found ? found.item : candidate;
+    if (!result.some((prior) => prior.ref === item.ref)) result.push(item);
+  }
+  return result;
+}
+
 export async function home() {
-  // El Inicio general puede tener menos tiempo para cargar que la sección del plugin.
-  // Consultamos solo el catálogo y usamos un único intento por host. No asignamos genre
-  // a estas filas: es opcional y se usa para agrupar Categorías/En vivo, no para etiquetar
-  // cada fila del Inicio; el plugin de referencia de Kino también deja este campo fuera.
+  let homeHtml = "";
   let catalogHtml = "";
-  try { catalogHtml = await getText(SERIES, { fast: true }); }
+  let moviesHtml = "";
+  try { homeHtml = await getText(BASE + "/", { fast: true }); }
+  catch (e) { log("No se pudo cargar el Inicio del sitio", e.message); }
+  try { catalogHtml = await getText(SERIES + "?sort=az", { fast: true }); }
   catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
+  try { moviesHtml = await getText(BASE + "/movies?page=0", { fast: true }); }
+  catch (e) {
+    log("No se pudo cargar el catálogo directo de películas", e.message);
+    try { moviesHtml = await getText(BASE + "/genres/Acción", { fast: true }); }
+    catch (fallbackError) { log("No se pudo cargar el respaldo de películas", fallbackError.message); }
+  }
 
-  const catalog = unique(parseSeries(catalogHtml)).slice(0, MAX_PAGE);
-  const featured = catalog.slice(0, MAX_HOME);
-  const split = splitCatalog(catalogHtml);
-  const rows = [
-    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.22 · Destacados", items: featured },
-    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.22 · Catálogo A–M", items: split.first.slice(0, MAX_HOME) },
-    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.22 · Catálogo N–Z", items: split.second.slice(0, MAX_HOME) },
-    { id: "series", ref: "series", title: "PRUEBA 0.1.22 · Todas las series", items: catalog.slice(0, MAX_HOME) }
+  const catalog = unique(parseSeries(catalogHtml));
+  const latestSection = sectionSlice(homeHtml, "últimos? episodios", 60000);
+  const trendsSection = sectionSlice(homeHtml, "tendencias", 45000);
+  let latest = mapToCatalog(unique(parseLatestSeries(latestSection)), catalog).slice(0, MAX_HOME);
+  if (!latest.length) latest = mapToCatalog(unique(parseSeries(latestSection)), catalog).slice(0, MAX_HOME);
+  const trends = mapToCatalog(unique(parseSeries(trendsSection)), catalog).slice(0, MAX_HOME);
+  const finished = parseFinishedSeries(catalogHtml).slice(0, MAX_HOME);
+  const movies = parseMovieItems(moviesHtml).slice(0, MAX_HOME);
+  const alphabetic = catalog.slice().sort((a, b) =>
+    normalizeSearch(a.title).localeCompare(normalizeSearch(b.title))
+  ).slice(0, MAX_HOME);
+
+  return [
+    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos Episodios", items: latest },
+    { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends },
+    { id: "series-finalizadas", ref: "series-finalizadas", title: "Series Finalizadas", items: finished },
+    { id: "peliculas", ref: "peliculas", title: "Películas", items: movies },
+    { id: "catalogo-az", ref: "catalogo-az", title: "Catálogo completo de A-Z", items: alphabetic }
   ].filter((row) => row.items.length > 0);
-  if (rows.length > 1) return rows;
-
-  // Si el parser no encuentra fichas, devolver un error explícito es más útil que
-  // presentar un falso Home con una única categoría vacía.
-  log("Home de diagnóstico: no se pudieron extraer suficientes fichas del catálogo");
-  return rows;
 }
 
 // Sección propia de Kino: aparece como una entrada separada en Inicio
@@ -471,10 +511,11 @@ export async function home() {
 export async function section({ tab }) {
   const tabs = [
     { id: "inicio", label: "Inicio" },
-    { id: "destacados", label: "Destacados" },
-    { id: "catalogo-a", label: "Catálogo A–M" },
-    { id: "catalogo-b", label: "Catálogo N–Z" },
-    { id: "series", label: "Todas las series" }
+    { id: "ultimos-episodios", label: "Últimos Episodios" },
+    { id: "tendencias", label: "Tendencias" },
+    { id: "series-finalizadas", label: "Series Finalizadas" },
+    { id: "peliculas", label: "Películas" },
+    { id: "catalogo-az", label: "Catálogo completo de A-Z" }
   ];
   const chosen = tabs.some((entry) => entry.id === tab) ? tab : "inicio";
   const rows = await home();
@@ -488,28 +529,52 @@ export async function section({ tab }) {
 // distintos de las filas home() que se agregan al Inicio global de Kino.
 export async function categories() {
   return [
-    { id: "destacados", title: "Destacados", ref: "destacados" },
-    { id: "catalogo-a", title: "Catálogo A–M", ref: "catalogo-a" },
-    { id: "catalogo-b", title: "Catálogo N–Z", ref: "catalogo-b" },
-    { id: "series", title: "Todas las series", ref: "series" }
+    { id: "ultimos-episodios", title: "Últimos Episodios", ref: "ultimos-episodios" },
+    { id: "tendencias", title: "Tendencias", ref: "tendencias" },
+    { id: "series-finalizadas", title: "Series Finalizadas", ref: "series-finalizadas" },
+    { id: "peliculas", title: "Películas", ref: "peliculas" },
+    { id: "catalogo-az", title: "Catálogo completo de A-Z", ref: "catalogo-az" }
   ];
 }
 
 export async function browse(ref, cursor) {
   const page = cursor ? Number(cursor) : 1;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
-  if (ref === "destacados" || ref === "catalogo-a" || ref === "catalogo-b" || ref === "series") {
-    const html = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
-    const catalog = unique(parseSeries(html));
-    if (ref === "series") return { items: catalog, next: catalog.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
-    if (ref === "destacados") {
-      const homeHtml = await getText(BASE + "/").catch(() => "");
-      const featured = unique(parseSeries(homeHtml));
-      return { items: (featured.length >= 3 ? featured : catalog).slice(0, MAX_PAGE) };
+
+  if (ref === "peliculas") {
+    let html = "";
+    try { html = await getText(BASE + "/movies?page=" + (page - 1)); }
+    catch (e) {
+      if (page !== 1) throw e;
+      html = await getText(BASE + "/genres/Acción");
     }
-    const split = splitCatalog(html);
-    return { items: (ref === "catalogo-a" ? split.first : split.second).slice(0, MAX_PAGE) };
+    const items = parseMovieItems(html);
+    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
   }
+
+  if (ref === "ultimos-episodios" || ref === "tendencias") {
+    const homeHtml = await getText(BASE + "/");
+    const catalogHtml = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
+    const catalog = unique(parseSeries(catalogHtml));
+    const sectionHtml = sectionSlice(homeHtml,
+      ref === "ultimos-episodios" ? "últimos? episodios" : "tendencias",
+      ref === "ultimos-episodios" ? 60000 : 45000);
+    const parsed = ref === "ultimos-episodios"
+      ? unique(parseLatestSeries(sectionHtml))
+      : unique(parseSeries(sectionHtml));
+    const items = mapToCatalog(parsed, catalog).slice(0, MAX_PAGE);
+    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+  }
+
+  if (ref === "series-finalizadas" || ref === "catalogo-az") {
+    const html = await getText(SERIES + "?sort=az" + (page > 1 ? "&page=" + page : ""));
+    const catalog = unique(parseSeries(html));
+    const items = ref === "series-finalizadas"
+      ? parseFinishedSeries(html)
+      : catalog.slice().sort((a, b) => normalizeSearch(a.title).localeCompare(normalizeSearch(b.title)));
+    return { items: items.slice(0, MAX_PAGE), next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+  }
+
   throw kino.error("not_found", "La categoría solicitada no existe");
 }
 
@@ -521,15 +586,23 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
-  info.title = "PRUEBA 0.1.22 · " + info.title;
   return { series: info, episodes: list };
 }
 
 export async function resolve(ref) {
   const path = String(ref || "");
-  const url = absolute(path.startsWith("/") ? path : "/" + path);
-  if (!url || !/^https:\/\/donghualife\.com\/watch\//i.test(url)) throw kino.error("not_found", "El episodio no es válido");
-  const html = await getText(url);
+  let url = absolute(path.startsWith("/") ? path : "/" + path);
+  if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
+    throw kino.error("not_found", "El episodio o película no es válido");
+  }
+  let html = await getText(url);
+  if (!/\/watch\//i.test(url)) {
+    const watch = /href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1/i.exec(html);
+    if (watch) {
+      url = absolute(watch[2], url);
+      html = await getText(url);
+    }
+  }
   if (/solo\s+para\s+vip|requiere\s+(?:una\s+)?suscripci[oó]n|inicia\s+sesi[oó]n\s+para\s+ver/i.test(textOf(html))) {
     throw kino.error("unavailable", "Este episodio requiere acceso en el sitio");
   }

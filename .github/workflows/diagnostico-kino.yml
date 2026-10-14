@@ -34,14 +34,24 @@ jobs:
         run: node test/smoke-test.mjs
       - name: Validar contrato y manifiesto
         run: node kino-sdk/sdk/validate.mjs .
-      - name: Probar Inicio con datos reales y exigir varias filas
+      - name: Probar Inicio con datos reales y exigir las cinco filas
         run: |
-          node kino-sdk/sdk/run.mjs ./plugin.js home > /tmp/home.json
-          node --input-type=module -e 'import fs from "node:fs"; const rows=JSON.parse(fs.readFileSync("/tmp/home.json","utf8")); if (!Array.isArray(rows) || rows.length < 2) { console.error("Inicio no devolvió varias filas:", rows); process.exit(1); } console.log("Filas reales de Inicio:", rows.map(r => r.title).join(" | "));'
-      - name: Probar navegación Ver más de Destacados
-        run: node kino-sdk/sdk/run.mjs ./plugin.js browse destacados 1
-      - name: Probar navegación Ver más de Series
-        run: node kino-sdk/sdk/run.mjs ./plugin.js browse series 1
+          for attempt in 1 2 3; do
+            node kino-sdk/sdk/run.mjs ./plugin.js home > /tmp/home.json || true
+            if node --input-type=module -e 'import fs from "node:fs"; let rows=[]; try { rows=JSON.parse(fs.readFileSync("/tmp/home.json","utf8")); } catch {} const expected=["Últimos Episodios","Tendencias","Series Finalizadas","Películas","Catálogo completo de A-Z"]; const actual=Array.isArray(rows)?rows.map(r=>r.title):[]; if (actual.join("|") !== expected.join("|")) { console.error("Orden o categorías de Inicio incorrectos:", actual); process.exit(1); } console.log("Filas reales de Inicio:", actual.join(" | "));'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Probar navegación Ver más de Últimos Episodios
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse ultimos-episodios 1
+      - name: Probar navegación Ver más de Series Finalizadas
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse series-finalizadas 1
+      - name: Probar navegación Ver más de Películas
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse peliculas 1
+      - name: Probar navegación Ver más de Catálogo A-Z
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse catalogo-az 1
       - name: Probar búsqueda real
         run: node kino-sdk/sdk/run.mjs ./plugin.js search "Against Sky Supreme"
       - name: Probar episodios con la referencia real de una tarjeta
