@@ -402,25 +402,31 @@ function splitCatalog(catalogHtml) {
 function parseFinishedSeries(html) {
   const source = String(html || "");
   return unique(parseSeries(source)).filter((item) => {
-    const at = source.indexOf("/series/" + item.ref);
-    if (at < 0) return false;
-    const cardStart = source.lastIndexOf("<article", at);
-    const cardEnd = source.indexOf("</article>", at);
-    if (cardStart >= 0 && cardEnd > at) {
-      return /finalizad[oa]|completad[oa]|terminad[oa]/i.test(source.slice(cardStart, cardEnd + 10));
+    const needle = "/series/" + item.ref;
+    let searchFrom = 0;
+    while (searchFrom < source.length) {
+      const at = source.indexOf(needle, searchFrom);
+      if (at < 0) return false;
+      searchFrom = at + needle.length;
+      const cardStart = source.lastIndexOf("<article", at);
+      const cardEnd = source.indexOf("</article>", at);
+      if (cardStart >= 0 && cardEnd > at) {
+        if (/finalizad[oa]|completad[oa]|terminad[oa]/i.test(source.slice(cardStart, cardEnd + 10))) return true;
+        continue;
+      }
+      const from = Math.max(0, at - 700);
+      const nearby = source.slice(from, Math.min(source.length, at + 350));
+      let closest = Infinity;
+      const status = /finalizad[oa]|completad[oa]|terminad[oa]/gi;
+      let match;
+      while ((match = status.exec(nearby))) {
+        closest = Math.min(closest, Math.abs((from + match.index) - at));
+      }
+      if (closest <= 650) return true;
     }
-    const from = Math.max(0, at - 260);
-    const nearby = source.slice(from, Math.min(source.length, at + 260));
-    let closest = Infinity;
-    const status = /finalizad[oa]|completad[oa]|terminad[oa]/gi;
-    let match;
-    while ((match = status.exec(nearby))) {
-      closest = Math.min(closest, Math.abs((from + match.index) - at));
-    }
-    return closest <= 650;
+    return false;
   });
 }
-
 function parseMovieItems(html) {
   const source = String(html || "");
   const section = sectionSlice(source, "(?:pel[ií]culas|pelis\\s+donghuas|donghua\\s+movies)", 70000) || source;
