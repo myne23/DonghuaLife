@@ -554,10 +554,10 @@ export async function home() {
   ).slice(0, MAX_HOME);
 
   return [
-    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos Episodios", items: latest },
+    { id: "ultimos-episodios", ref: "ultimos-episodios-home", title: "Últimos Episodios", items: latest },
     { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends },
     { id: "series-finalizadas", ref: "series-finalizadas", title: "Series Finalizadas", items: finished },
-    { id: "peliculas", ref: "peliculas", title: "Películas", items: movies },
+    { id: "peliculas", ref: "peliculas-home", title: "Películas", items: movies },
     { id: "catalogo-az", ref: "catalogo-az", title: "Catálogo completo de A-Z", items: alphabetic }
   ].filter((row) => row.items.length > 0);
 }
@@ -598,25 +598,55 @@ export async function browse(ref, cursor) {
   const page = cursorState.page;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
 
-  if (ref === "peliculas") {
-    const url = BASE + "/peliculas" + (page > 1 ? "?page=" + page : "");
-    const html = await getText(url);
-    const items = parseMovieItems(html).slice(0, MAX_PAGE);
-    return pagedResult(items, page, cursorState.previous);
+  if (ref === "peliculas" || ref === "peliculas-home") {
+    const isHomeRow = ref === "peliculas-home";
+    const seen = new Set(cursorState.seen || []);
+    let sourcePage = page;
+    if (isHomeRow && page === 1 && seen.size === 0) {
+      const firstHtml = await getText(BASE + "/peliculas");
+      parseMovieItems(firstHtml).slice(0, MAX_HOME).forEach((item) => seen.add(item.ref));
+      sourcePage = 2;
+    }
+    let sourceHtml = "";
+    const items = [];
+    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_PAGE; checked++, sourcePage++) {
+      const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+      sourceHtml = await getText(url);
+      const parsed = parseMovieItems(sourceHtml);
+      if (!parsed.length) break;
+      for (const item of parsed) {
+        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        items.push(item);
+        seen.add(item.ref);
+      }
+      if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
+    }
+    if (!items.length) return { items: [] };
+    return {
+      items: items.slice(0, MAX_PAGE),
+      next: hasNextPage(sourceHtml, sourcePage)
+        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-200) })
+        : undefined
+    };
   }
 
-  if (ref === "ultimos-episodios") {
+  if (ref === "ultimos-episodios" || ref === "ultimos-episodios-home") {
+    const isHomeRow = ref === "ultimos-episodios-home";
     const catalogHtml = await getText(SERIES + "?sort=az");
     const catalog = unique(parseSeries(catalogHtml));
     const seen = new Set(cursorState.seen || []);
+    if (isHomeRow && page === 1 && seen.size === 0) {
+      const homeHtml = await getText(BASE + "/");
+      const homeLatest = sectionSlice(homeHtml, "últimos? episodios", 60000);
+      mapToCatalog(unique(parseLatestSeries(homeLatest)), catalog).forEach((item) => seen.add(item.ref));
+    }
     const items = [];
     let sourcePage = page;
-    // Una misma serie puede aparecer varias veces en la página de episodios recientes.
-    // Avanzamos páginas fuente hasta encontrar series nuevas, sin devolver tandas repetidas.
+    let sourceHtml = "";
     for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_PAGE; checked++, sourcePage++) {
       const url = BASE + "/ultimos-episodios" + (sourcePage > 1 ? "?page=" + sourcePage : "");
-      const latestHtml = await getText(url);
-      const parsed = unique(parseLatestSeries(latestHtml));
+      sourceHtml = await getText(url);
+      const parsed = unique(parseLatestSeries(sourceHtml));
       if (!parsed.length) break;
       const mapped = mapToCatalog(parsed, catalog);
       for (const item of mapped) {
@@ -624,14 +654,12 @@ export async function browse(ref, cursor) {
         items.push(item);
         seen.add(item.ref);
       }
-      // Si ya encontramos nuevas series, devolvemos esta tanda y seguimos desde la página
-      // siguiente en la próxima petición. Si no, seguimos buscando sin crear una página vacía.
-      if (items.length) break;
+      if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
     }
     if (!items.length) return { items: [] };
     return {
       items: items.slice(0, MAX_PAGE),
-      next: sourcePage <= 100
+      next: hasNextPage(sourceHtml, sourcePage)
         ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-200) })
         : undefined
     };
