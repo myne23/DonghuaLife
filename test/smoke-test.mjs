@@ -17,10 +17,11 @@ const homeHtml = [
 ].join('');
 const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-temporada-1-5"><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a>';
 const catalogHtml = [
-  '<a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a>',
-  '<a href="/series/beta"><img alt="Beta Donghua" src="/images/beta.jpg"></a>',
-  '<a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a>'
+  '<article><span>Finalizado</span><a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a></article>',
+  '<article><span>En Emisión</span><a href="/series/beta"><img alt="Beta Donghua" src="/images/beta.jpg"></a></article>',
+  '<article><span>Finalizado</span><a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a></article>'
 ].join('');
+const moviesHtml = '<h2>Pelis Donghuas</h2><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a>';
 const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a>';
 const directWatch = '<video src="https://cdn.example.test/video.mp4"></video>';
 const metadata = JSON.stringify({videos:[{name:'hd',url:'https://v.okcdn.ru/video.mp4'}]});
@@ -36,6 +37,7 @@ globalThis.kino = {
     fetchCalls.push(url);
     let body = '';
     if (url === 'https://donghualife.com/' || url === 'https://donghualife.com') body = homeHtml;
+    else if (url.startsWith('https://donghualife.com/index.php/')) body = moviesHtml;
     else if (url === 'https://donghualife.com/ultimos-episodios') body = latestHtml;
     else if (url.startsWith('https://donghualife.com/series/alpha')) body = seriesHtml;
     else if (url.startsWith('https://donghualife.com/series?')) body = catalogHtml;
@@ -50,33 +52,33 @@ globalThis.kino = {
 const plugin = await import('../plugin.js?smoke=2');
 const beforeHomeFetches = fetchCalls.length;
 const home = await plugin.home();
-assert.equal(fetchCalls.length - beforeHomeFetches, 1, 'El Inicio debe cargar sus filas con una sola consulta cuando responde el host principal');
+assert.equal(fetchCalls.length - beforeHomeFetches, 3, 'El Inicio consulta portada, catálogo y sección de películas');
 const categories = await plugin.categories(null);
 const sectionHome = await plugin.section({ tab: null });
 assert.equal(sectionHome.tab, 'inicio');
-assert.deepEqual(sectionHome.tabs.map((entry) => entry.id), ['inicio', 'destacados', 'catalogo-a', 'catalogo-b', 'series']);
+assert.deepEqual(sectionHome.tabs.map((entry) => entry.id), ['inicio', 'ultimos-episodios', 'tendencias', 'series-finalizadas', 'peliculas', 'catalogo-az']);
 assert.ok(sectionHome.rows.length >= 3, 'La sección propia debe mostrar varias filas');
 assert.ok(sectionHome.rows.every((row) => !Object.hasOwn(row, 'genre')), 'La sección reutiliza las mismas filas sin género forzado');
-const sectionCatalog = await plugin.section({ tab: 'series' });
-assert.equal(sectionCatalog.tab, 'series');
+const sectionCatalog = await plugin.section({ tab: 'catalogo-az' });
+assert.equal(sectionCatalog.tab, 'catalogo-az');
 assert.equal(sectionCatalog.rows.length, 1);
-assert.equal(sectionCatalog.rows[0].id, 'series');
+assert.equal(sectionCatalog.rows[0].id, 'catalogo-az');
 assert.ok(sectionCatalog.rows[0].items.every((item) => item.kind === 'series' && item.ref));
 
-assert.deepEqual(categories.map((category) => category.id), ['destacados', 'catalogo-a', 'catalogo-b', 'series']);
+assert.deepEqual(categories.map((category) => category.id), ['ultimos-episodios', 'tendencias', 'series-finalizadas', 'peliculas', 'catalogo-az']);
 assert.ok(categories.every((category) => category.title && category.ref));
 
 assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
-assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.22 · Destacados'));
-assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.22 · Catálogo A–M'));
-assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.22 · Todas las series'));
-assert.equal(home[0].items[0].title, 'Alpha Donghua', 'Destacados usa el catálogo disponible sin pedir una segunda página');
-assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
+assert.deepEqual(home.map((row) => row.title), ['Últimos Episodios', 'Tendencias', 'Series Finalizadas', 'Películas', 'Catálogo completo A-Z']);
+assert.equal(home[0].items[0].title, 'Gamma Donghua', 'Últimos episodios debe usar la sección real de la portada');
+assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref)));
+assert.equal(home.find((row) => row.id === 'series-finalizadas').items.length, 2);
+assert.equal(home.find((row) => row.id === 'peliculas').items[0].kind, 'movie');
 assert.ok(home.every((row) => !Object.hasOwn(row, 'genre')), 'Las filas de Home no deben forzar todas las categorías al género anime');
-assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'alpha');
-const pageA = await plugin.browse('catalogo-a', '1');
+assert.equal(home.find((row) => row.id === 'catalogo-az').items[0].title, 'Alpha Donghua');
+const pageA = await plugin.browse('catalogo-az', '1');
 assert.ok(pageA.items.length > 0);
-const pageB = await plugin.browse('catalogo-b', '1');
+const pageB = await plugin.browse('tendencias', '1');
 assert.ok(pageB.items.length > 0);
 const found = await plugin.search('Alpha');
 assert.ok(found.length >= 1);
