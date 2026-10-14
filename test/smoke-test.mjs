@@ -56,6 +56,7 @@ const sectionHome = await plugin.section({ tab: null });
 assert.equal(sectionHome.tab, 'inicio');
 assert.deepEqual(sectionHome.tabs.map((entry) => entry.id), ['inicio', 'destacados', 'catalogo-a', 'catalogo-b', 'series']);
 assert.ok(sectionHome.rows.length >= 3, 'La sección propia debe mostrar varias filas');
+assert.ok(sectionHome.rows.every((row) => !Object.hasOwn(row, 'genre')), 'La sección reutiliza las mismas filas sin género forzado');
 const sectionCatalog = await plugin.section({ tab: 'series' });
 assert.equal(sectionCatalog.tab, 'series');
 assert.equal(sectionCatalog.rows.length, 1);
@@ -66,11 +67,12 @@ assert.deepEqual(categories.map((category) => category.id), ['destacados', 'cata
 assert.ok(categories.every((category) => category.title && category.ref));
 
 assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
-assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.21 · Destacados'));
-assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.21 · Catálogo A–M'));
-assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.21 · Todas las series'));
+assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.22 · Destacados'));
+assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.22 · Catálogo A–M'));
+assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.22 · Todas las series'));
 assert.equal(home[0].items[0].title, 'Alpha Donghua', 'Destacados usa el catálogo disponible sin pedir una segunda página');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
+assert.ok(home.every((row) => !Object.hasOwn(row, 'genre')), 'Las filas de Home no deben forzar todas las categorías al género anime');
 assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'alpha');
 const pageA = await plugin.browse('catalogo-a', '1');
 assert.ok(pageA.items.length > 0);
