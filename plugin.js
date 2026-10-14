@@ -423,61 +423,60 @@ function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
     { id: "series", ref: "series", title: "DL 0.1.17 · Todas las series", genre: "anime", items: allCatalog.slice(0, MAX_HOME) }
   ].filter((row) => row.items.length);
 }
+function splitCatalog(catalogHtml) {
+  const items = unique(parseSeries(catalogHtml)).slice().sort((a, b) =>
+    normalizeSearch(a.title).localeCompare(normalizeSearch(b.title))
+  );
+  if (items.length < 2) return { first: items, second: [] };
+  // La mitad alfabética de un catálogo real puede quedar vacía; dividir por orden
+  // de título garantiza dos carruseles útiles incluso si el sitio concentra sus títulos.
+  const middle = Math.ceil(items.length / 2);
+  return { first: items.slice(0, middle), second: items.slice(middle) };
+}
+
 export async function home() {
-  await null;
-  // Keep these requests sequential: the site intermittently returns 502 when its homepage,
-  // latest episodes and catalog are fetched in parallel from the same client.
-  let homeHtml = "";
-  let latestHtml = "";
+  // 0.1.18 evita depender de los encabezados del HTML para crear el Home:
+  // siempre parte del catálogo estable y construye filas con refs de browse válidas.
   let catalogHtml = "";
-  try { homeHtml = await getText(BASE + "/"); }
-  catch (e) { log("Falló el inicio", e.message); }
-  try { latestHtml = await getText(BASE + "/ultimos-episodios"); }
-  catch (e) { log("Falló últimos episodios", e.message); }
+  let homeHtml = "";
   try { catalogHtml = await getText(SERIES); }
-  catch (e) { log("Falló el catálogo", e.message); }
-  if (!homeHtml) homeHtml = catalogHtml;
-  const rows = parseHomeRows(homeHtml, latestHtml, catalogHtml);
-  if (rows.length) return rows;
-  return [{ id: "destacados", title: "Destacados", genre: "anime", items: unique(parseSeries(homeHtml)).slice(0, MAX_HOME) }];
+  catch (e) { log("No se pudo cargar el catálogo principal", e.message); }
+  try { homeHtml = await getText(BASE + "/"); }
+  catch (e) { log("No se pudo cargar la portada; se usará el catálogo", e.message); }
+
+  const catalog = unique(parseSeries(catalogHtml || homeHtml)).slice(0, MAX_PAGE);
+  const homeItems = unique(parseSeries(homeHtml));
+  const featured = (homeItems.length >= 3 ? homeItems : catalog).slice(0, MAX_HOME);
+  const split = splitCatalog(catalogHtml || homeHtml);
+  const rows = [
+    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.18 · Destacados", genre: "anime", items: featured },
+    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.18 · Catálogo A–M", genre: "anime", items: split.first.slice(0, MAX_HOME) },
+    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.18 · Catálogo N–Z", genre: "anime", items: split.second.slice(0, MAX_HOME) },
+    { id: "series", ref: "series", title: "PRUEBA 0.1.18 · Todas las series", genre: "anime", items: catalog.slice(0, MAX_HOME) }
+  ].filter((row) => row.items.length > 0);
+  if (rows.length > 1) return rows;
+
+  // Si el parser no encuentra fichas, devolver un error explícito es más útil que
+  // presentar un falso Home con una única categoría vacía.
+  log("Home de diagnóstico: no se pudieron extraer suficientes fichas del catálogo");
+  return rows;
 }
 
 export async function browse(ref, cursor) {
-  await null;
   const page = cursor ? Number(cursor) : 1;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
-
-  if (ref === "ultimos-episodios" || ref === "estrenos-vip") {
-    // Estas secciones enlazan a episodios (/watch/), no a fichas (/series/).
-    // Leer el bloque exacto de Inicio evita mezclar Últimos episodios con los VIP.
-    const homeHtml = await getText(BASE + "/");
-    const pattern = ref === "estrenos-vip" ? "estrenos vip" : "últimos episodios";
-    const section = sectionSlice(homeHtml, pattern, 65000);
-    let items = unique(parseLatestSeries(section));
-    if (ref === "ultimos-episodios" && items.length < 3) {
-      const latestHtml = await getText(BASE + "/ultimos-episodios").catch(() => "");
-      items = unique(items.concat(parseLatestSeries(latestHtml)));
-    }
-    return { items: items.slice(0, MAX_PAGE) };
-  }
-
-  if (ref === "destacados" || ref === "tendencias") {
-    // Reutilizar exactamente la misma selección que home() evita que "Ver más"
-    // muestre el catálogo entero cuando no se detecta el encabezado de una sección.
-    const homeHtml = await getText(BASE + "/");
-    const latestHtml = await getText(BASE + "/ultimos-episodios").catch(() => "");
-    const catalogHtml = await getText(SERIES).catch(() => "");
-    const rows = parseHomeRows(homeHtml, latestHtml, catalogHtml);
-    const row = rows.find((entry) => entry.id === ref);
-    return { items: row ? row.items : [] };
-  }
-
-  if (ref === "series") {
+  if (ref === "destacados" || ref === "catalogo-a" || ref === "catalogo-b" || ref === "series") {
     const html = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
-    const items = unique(parseSeries(html));
-    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+    const catalog = unique(parseSeries(html));
+    if (ref === "series") return { items: catalog, next: catalog.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+    if (ref === "destacados") {
+      const homeHtml = await getText(BASE + "/").catch(() => "");
+      const featured = unique(parseSeries(homeHtml));
+      return { items: (featured.length >= 3 ? featured : catalog).slice(0, MAX_PAGE) };
+    }
+    const split = splitCatalog(html);
+    return { items: (ref === "catalogo-a" ? split.first : split.second).slice(0, MAX_PAGE) };
   }
-
   throw kino.error("not_found", "La categoría solicitada no existe");
 }
 
@@ -489,7 +488,7 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
-  info.title = "DL 0.1.17 · " + info.title;
+  info.title = "PRUEBA 0.1.18 · " + info.title;
   return { series: info, episodes: list };
 }
 
