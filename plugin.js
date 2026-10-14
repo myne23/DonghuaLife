@@ -159,11 +159,13 @@ function parseEpisodes(html, pageUrl) {
     if (season < 1 || number < 1) continue;
     let label = textOf(match[3]);
     label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
-    label = label.replace(/(cap[ií]tulo\s*\d+)\s*\1/gi, "$1").replace(/(episodio\s*\d+)\s*\1/gi, "$1");
-    // Si el HTML repite el nombre del capítulo en varias etiquetas, no mostrarlo dos veces.
-    if (!label || /^(?:cap[ií]tulo\s*)?\d+$/i.test(label) || label.length > 100) label = "Capítulo " + number;
-    else if (/^(?:\d+\s*)?(?:cap[ií]tulo|episodio)\s*\d+$/i.test(label)) label = "Capítulo " + number;
-    else if (!/cap[ií]tulo|episodio/i.test(label)) label = "Capítulo " + number + " · " + label;
+    // DonghuaLife suele repetir el número en «Capítulo 2 episodio 02».
+    // El enlace tiene el número real: evitamos títulos redundantes.
+    if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
+      label = "Capítulo " + number;
+    } else {
+      label = "Capítulo " + number + " · " + label;
+    }
     out.push({ season, number, ref: path, title: label.slice(0, 180) });
     seen.add(path);
   }
@@ -253,21 +255,55 @@ export async function search(query) {
   return items.slice(0, MAX_PAGE);
 }
 
+function sectionSlice(html, headingPattern, maxChars) {
+  const heading = new RegExp("<h[1-6]\\b[^>]*>[\\s\\S]*?" + headingPattern + "[\\s\\S]*?<\\/h[1-6]>", "i");
+  const match = heading.exec(html);
+  if (!match) return "";
+  const start = match.index + match[0].length;
+  const tail = html.slice(start, start + (maxChars || 60000));
+  const next = /<h[1-3]\b[^>]*>/i.exec(tail);
+  return next ? tail.slice(0, next.index) : tail;
+}
+
+function parseHomeRows(homeHtml, latestHtml) {
+  const featuredHtml = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
+  const trendsHtml = sectionSlice(homeHtml, "tendencias", 45000);
+  const featured = unique(parseSeries(featuredHtml || homeHtml)).slice(0, MAX_HOME);
+  const latest = unique(parseSeries(latestHtml || "")).slice(0, MAX_HOME);
+  const trends = unique(parseSeries(trendsHtml || homeHtml))
+    .filter((x) => !featured.some((y) => y.ref === x.ref)).slice(0, MAX_HOME);
+  return [
+    { id: "destacados", title: "Destacados", genre: "anime", items: featured },
+    { id: "ultimos-episodios", title: "Últimos episodios", genre: "anime", items: latest },
+    { id: "tendencias", title: "Tendencias", genre: "anime", items: trends }
+  ].filter((row) => row.items.length);
+}
+
 export async function home() {
   await null;
-  let items = [];
-  try { items = parseSeries(await getText(BASE + "/")); } catch (e) { log("Falló el inicio", e.message); }
-  if (!items.length) items = parseSeries(await getText(SERIES));
-  return [{ id: "series", title: "Donghua populares", ref: "series", genre: "anime", items: unique(items).slice(0, MAX_HOME) }];
+  let homeHtml = "";
+  let latestHtml = "";
+  try { homeHtml = await getText(BASE + "/"); } catch (e) { log("Falló el inicio", e.message); }
+  try { latestHtml = await getText(BASE + "/ultimos-episodios"); } catch (e) { log("Falló últimos episodios", e.message); }
+  if (!homeHtml) homeHtml = await getText(SERIES);
+  const rows = parseHomeRows(homeHtml, latestHtml);
+  if (rows.length) return rows;
+  return [{ id: "destacados", title: "Destacados", genre: "anime", items: unique(parseSeries(homeHtml)).slice(0, MAX_HOME) }];
 }
 
 export async function browse(ref, cursor) {
   await null;
-  if (ref !== "series") throw kino.error("not_found", "La categoría solicitada no existe");
   const page = cursor ? Number(cursor) : 1;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
-  const url = SERIES + (page > 1 ? "?page=" + page : "");
-  const items = unique(parseSeries(await getText(url)));
+  let url;
+  if (ref === "destacados" || ref === "tendencias") url = BASE + "/";
+  else if (ref === "ultimos-episodios") url = BASE + "/ultimos-episodios";
+  else if (ref === "series") url = SERIES + (page > 1 ? "?page=" + page : "");
+  else throw kino.error("not_found", "La categoría solicitada no existe");
+  let html = await getText(url);
+  if (ref === "destacados") html = sectionSlice(html, "(?:te recomendamos para vos|recomendados|destacados)", 65000) || html;
+  if (ref === "tendencias") html = sectionSlice(html, "tendencias", 45000) || html;
+  const items = unique(parseSeries(html));
   return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
 }
 
