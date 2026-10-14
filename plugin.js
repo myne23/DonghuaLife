@@ -629,7 +629,7 @@ export async function browse(ref, cursor) {
     return {
       items: items.slice(0, MAX_PAGE),
       next: sourcePage <= 100
-        ? JSON.stringify({ page: sourcePage, seen: Array.from(seen).slice(-200) })
+        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-200) })
         : undefined
     };
   }
