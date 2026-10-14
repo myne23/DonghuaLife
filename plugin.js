@@ -399,6 +399,19 @@ function splitCatalog(catalogHtml) {
   return { first: items.slice(0, middle), second: items.slice(middle) };
 }
 
+function hasNextPage(html, currentPage) {
+  const source = String(html || "");
+  const expected = Number(currentPage) + 1;
+  const links = source.match(/<a\\b[^>]*href\\s*=\\s*(["'][^"']+["'])[^>]*>[\\s\\S]*?<\\/a>/gi) || [];
+  for (const link of links) {
+    const match = /[?&]page=(\\d+)/i.exec(link);
+    if (match && Number(match[1]) === expected) return true;
+    if (/\\brel\\s*=\\s*(["'])next\\1/i.test(link)) return true;
+    if (/(?:siguiente|next|›|»|→)/i.test(textOf(link))) return true;
+  }
+  return false;
+}
+
 function parseFinishedSeries(html) {
   const source = String(html || "");
   const lowerSource = source.toLowerCase();
@@ -548,36 +561,63 @@ export async function browse(ref, cursor) {
       if (page !== 1) throw e;
       html = await getText(BASE + "/genres/Acción");
     }
-    const items = parseMovieItems(html);
-    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+    const items = parseMovieItems(html).slice(0, MAX_PAGE);
+    const more = page < 100 && (hasNextPage(html, page - 1) || items.length >= MAX_PAGE);
+    return { items, next: more ? String(page + 1) : undefined };
   }
 
-  if (ref === "ultimos-episodios" || ref === "tendencias") {
-    const homeHtml = await getText(BASE + "/");
-    const catalogHtml = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
+  if (ref === "ultimos-episodios") {
+    const url = BASE + "/ultimos-episodios" + (page > 1 ? "?page=" + (page - 1) : "");
+    const latestHtml = await getText(url);
+    const catalogHtml = await getText(SERIES + "?sort=az");
     const catalog = unique(parseSeries(catalogHtml));
-    const sectionHtml = sectionSlice(homeHtml,
-      ref === "ultimos-episodios" ? "últimos? episodios" : "tendencias",
-      ref === "ultimos-episodios" ? 60000 : 45000);
-    const parsed = ref === "ultimos-episodios"
-      ? unique(parseLatestSeries(sectionHtml))
-      : unique(parseSeries(sectionHtml));
+    let parsed = unique(parseLatestSeries(latestHtml));
+    if (!parsed.length && page === 1) {
+      const homeHtml = await getText(BASE + "/");
+      parsed = unique(parseLatestSeries(sectionSlice(homeHtml, "últimos? episodios", 60000)));
+    }
     const items = mapToCatalog(parsed, catalog).slice(0, MAX_PAGE);
-    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+    const more = page < 100 && (hasNextPage(latestHtml, page - 1) || parsed.length >= MAX_PAGE);
+    return { items, next: more ? String(page + 1) : undefined };
   }
 
-  if (ref === "series-finalizadas" || ref === "catalogo-az") {
+  if (ref === "tendencias") {
+    // Tendencias es una lista editorial de la portada, no una página del catálogo.
+    // No ofrecemos un cursor falso que repetiría los mismos resultados.
+    if (page > 1) return { items: [] };
+    const homeHtml = await getText(BASE + "/");
+    const sectionHtml = sectionSlice(homeHtml, "tendencias", 45000);
+    const items = unique(parseSeries(sectionHtml)).slice(0, MAX_PAGE);
+    return { items };
+  }
+
+  if (ref === "series-finalizadas") {
+    const items = [];
+    let sourcePage = page;
+    let hasMore = false;
+    for (let checked = 0; checked < 5 && sourcePage <= 100 && items.length < MAX_HOME; checked++, sourcePage++) {
+      const html = await getText(SERIES + "?sort=az" + (sourcePage > 1 ? "&page=" + sourcePage : ""));
+      const raw = unique(parseSeries(html));
+      items.push(...parseFinishedSeries(html));
+      hasMore = sourcePage < 100 && (hasNextPage(html, sourcePage) || raw.length >= MAX_PAGE);
+      if (!hasMore || raw.length === 0) break;
+    }
+    return {
+      items: unique(items).slice(0, MAX_PAGE),
+      next: hasMore && sourcePage <= 100 ? String(sourcePage) : undefined
+    };
+  }
+
+  if (ref === "catalogo-az") {
     const html = await getText(SERIES + "?sort=az" + (page > 1 ? "&page=" + page : ""));
     const catalog = unique(parseSeries(html));
-    const items = ref === "series-finalizadas"
-      ? parseFinishedSeries(html)
-      : catalog.slice().sort((a, b) => normalizeSearch(a.title).localeCompare(normalizeSearch(b.title)));
-    return { items: items.slice(0, MAX_PAGE), next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+    const items = catalog.slice().sort((a, b) => normalizeSearch(a.title).localeCompare(normalizeSearch(b.title)));
+    const more = page < 100 && (hasNextPage(html, page) || items.length >= MAX_PAGE);
+    return { items, next: more ? String(page + 1) : undefined };
   }
 
   throw kino.error("not_found", "La categoría solicitada no existe");
 }
-
 export async function episodes(ref) {
   const url = seriesUrl(ref);
   if (!url) throw kino.error("not_found", "No se encontró la serie");
