@@ -1181,26 +1181,45 @@ function addSourceAlternatives(stream, candidates, selectedUrl) {
 
 function capturedStream(capture) {
   const media = Array.isArray(capture && capture.media) ? capture.media : [];
-  const rank = (item) => {
+  const mediaType = (item) => {
     const url = String(item && item.url || "");
     const mime = String(item && item.mime || "").toLowerCase();
-    if (/mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(url)) return 0;
-    if (/mp4|webm/.test(mime) || /\.(?:mp4|webm)(?:[?#]|$)/i.test(url)) return 1;
-    return 2;
+    if (/mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(url)) return "hls";
+    if (/mp4/.test(mime) || /\.mp4(?:[?#]|$)/i.test(url)) return "mp4";
+    if (/webm/.test(mime) || /\.webm(?:[?#]|$)/i.test(url)) return "webm";
+    return "";
   };
-  const stream = media.filter((item) => item && /^https:\/\//i.test(String(item.url || "")))
-    .sort((a, b) => rank(a) - rank(b))[0];
+  const rank = (item) => mediaType(item) === "hls" ? 0 : mediaType(item) === "mp4" ? 1 : mediaType(item) === "webm" ? 2 : 3;
+  // La captura también puede contener segmentos, imágenes o solicitudes auxiliares.
+  // Solo tratamos como fuentes alternativas manifiestos HLS y archivos de video.
+  const candidates = media.filter((item) => item && /^https:\/\//i.test(String(item.url || "")) && mediaType(item))
+    .sort((a, b) => rank(a) - rank(b));
+  const stream = candidates[0];
   if (!stream) return null;
-  const mime = String(stream.mime || "").toLowerCase();
-  const url = String(stream.url);
-  const result = {
-    url,
-    mime: /mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(url)
-      ? "application/vnd.apple.mpegurl"
-      : /webm/.test(mime) || /\.webm(?:[?#]|$)/i.test(url) ? "video/webm"
-      : /mp4/.test(mime) || /\.mp4(?:[?#]|$)/i.test(url) ? "video/mp4" : (stream.mime || "video/mp4")
+  const mimeFor = (item) => {
+    const type = mediaType(item);
+    return type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4";
   };
+  const url = String(stream.url);
+  const result = { url, mime: mimeFor(stream) };
   if (stream.headers && typeof stream.headers === "object") result.headers = stream.headers;
+
+  const seen = new Set([url]);
+  const alternatives = [];
+  for (const item of candidates.slice(1)) {
+    const alternateUrl = String(item.url);
+    if (seen.has(alternateUrl) || alternatives.length >= 8) continue;
+    seen.add(alternateUrl);
+    const kind = mediaType(item).toUpperCase();
+    alternatives.push({
+      label: sourceLabel(alternateUrl) + " · " + kind,
+      url: alternateUrl,
+      mime: mimeFor(item),
+      ...(item.headers && typeof item.headers === "object" ? { headers: item.headers } : {})
+    });
+  }
+  if (alternatives.length) result.alternatives = alternatives;
+
   const subtitles = Array.isArray(capture.subtitles) ? capture.subtitles : [];
   result.subtitles = subtitles.filter((item) => item && /^https:\/\//i.test(String(item.url || "")))
     .map((item) => ({
@@ -1217,8 +1236,11 @@ async function capturePageStream(url) {
   try {
     const capture = await kino.browser.capture(url, { timeoutMs: 18000, autoplay: true });
     const stream = capturedStream(capture);
-    if (stream) log("Se detectó una fuente de video con el navegador integrado");
-    else log("El navegador integrado no detectó una fuente de video");
+    if (stream) {
+      let host = "desconocido";
+      try { host = new URL(stream.url).hostname; } catch {}
+      log("Fuente capturada", host, stream.mime, "alternativas:", Array.isArray(stream.alternatives) ? stream.alternatives.length : 0);
+    } else log("El navegador integrado no detectó una fuente de video compatible");
     return stream;
   } catch (error) {
     log("No se pudo capturar el reproductor web", error && error.message || String(error));
