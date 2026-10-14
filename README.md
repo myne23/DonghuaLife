@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.40 conserva la sección propia de Kino y las cuatro filas (Destacados, Catálogo A–M, Catálogo N–Z y Todas las series). Para el Inicio general, obtiene las filas con una única consulta rápida al catálogo, evita reintentos prolongados y no asigna `genre: anime` a cada fila, ya que ese campo se usa para agrupación de Categorías/En vivo y no es necesario para filas de Inicio. La resolución de episodios entrega las fuentes directas alternativas como opciones nativas de Kino y deja los reproductores externos como alternativas diferidas.
+La versión 0.1.41 conserva el catálogo existente y mejora la reproducción: etiqueta el servidor activo, conserva fuentes HLS/MP4/WebM capturadas como alternativas nativas y permite que Kino intente otra copia si la primera no puede reproducirse. Las fuentes de reproductores externos siguen resolviéndose de forma diferida.
 
 ## Estado del desarrollo
 
