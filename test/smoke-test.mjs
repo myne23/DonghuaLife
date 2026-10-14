@@ -174,6 +174,27 @@ assert.equal(overflowPage2.items[0].title, 'Movie 26', 'La segunda página debe 
 assert.equal(overflowPage2.items[14].title, 'Movie 40');
 assert.equal(overflowPage2.next, undefined, 'No debe ofrecer una tercera página cuando ya se alcanzaron las 40 películas');
 
+assert.equal(overflowPage2.next, undefined, 'No debe ofrecer una tercera página cuando ya se alcanzaron las 40 películas');
+
+// Las portadas de algunas fichas vienen de /_next/image; el plugin debe usar
+// la ruta del archivo original para que Kino pueda cargarla directamente.
+const posterPlugin = await import('../plugin.js?next-image-poster-test=1');
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url.startsWith('https://donghualife.com/peliculas')) {
+    const body = '<h2>Películas</h2>' +
+      '<a href="/peliculas/lord-legend-of-ravaging-dynasties"><img alt="L.O.R.D: Legend of Ravaging Dynasties" src="https://donghualife.com/_next/image?q=75&amp;url=%2Fimages%2Fwebp%2Flord-legend-ravaging-dynasties__bannerImage.webp&amp;w=3840"></a>' +
+      '<a href="/peliculas/la-leyenda-del-rey-mono-el-regreso-del-heroe"><img alt="La Leyenda del Rey Mono: El Regreso del Héroe" src="https://donghualife.com/_next/image?q=75&amp;url=%2Fimages%2Flegacy%2Fla-leyenda-del-rey-mono-el-regreso-del-heroe__coverImage__892e9c632c77.jpg&amp;w=3840"></a>';
+    return {ok:true,status:200,async text(){return body;},async json(){return JSON.parse(body);}};
+  }
+  throw new Error('URL inesperada en prueba de portadas Next.js: ' + url);
+};
+const nextImageMovies = await posterPlugin.browse('peliculas', null);
+assert.equal(nextImageMovies.items[0].poster, 'https://donghualife.com/images/webp/lord-legend-ravaging-dynasties__bannerImage.webp',
+  'L.O.R.D debe usar la imagen original y no la URL del optimizador Next.js');
+assert.equal(nextImageMovies.items[1].poster, 'https://donghualife.com/images/legacy/la-leyenda-del-rey-mono-el-regreso-del-heroe__coverImage__892e9c632c77.jpg',
+  'La Leyenda del Rey Mono debe usar la imagen original y no la URL del optimizador Next.js');
+
 // La fuente puede devolver HTML 200 de una ficha incompleta desde el catálogo.
 // En ese caso, episodes debe recuperar la ficha canónica como la búsqueda global.
 const incompletePlugin = await import('../plugin.js?catalog-incomplete=2');

@@ -110,6 +110,22 @@ function absolute(url, base) {
   try { return new URL(decodeHtml(url), base || BASE).href; } catch { return ""; }
 }
 
+// DonghuaLife sirve algunas portadas a través del optimizador de Next.js.
+// Kino puede no resolver esa URL intermedia, así que usamos el archivo original
+// indicado en el parámetro ?url= (por ejemplo /_next/image?url=%2Fimages%2Fwebp%2F...).
+function posterUrl(raw, base) {
+  const resolved = absolute(raw, base);
+  if (!resolved) return "";
+  try {
+    const url = new URL(resolved);
+    if (url.pathname.endsWith("/_next/image") || url.pathname === "/_next/image") {
+      const original = url.searchParams.get("url");
+      if (original) return new URL(original, url.origin).href;
+    }
+  } catch {}
+  return resolved;
+}
+
 function slugFromUrl(url) {
   const match = /\/series\/([a-z0-9-]+)/i.exec(String(url || ""));
   return match ? match[1] : "";
@@ -153,8 +169,8 @@ function parseSeries(html) {
       /(?:background-image)\s*:\s*url\((["']?)([^)"']+)\1\)/i.exec(match[0])?.[2] || "";
     const candidate = {
       id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
-      kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
-      backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"]
+      kind: "series", poster: posterRaw ? posterUrl(posterRaw) : undefined,
+      backdrop: posterRaw ? posterUrl(posterRaw) : undefined, genres: ["anime"]
     };
     const prior = bySlug.get(slug);
     const score = (x) => (x.poster ? 4 : 0) + (/detalles|ver ahora|play/i.test(x.title) ? -10 : 0) + (x.title.toLowerCase() !== slug.replace(/-/g, " ") ? 2 : 0);
@@ -168,7 +184,7 @@ function parseSeries(html) {
   if (heroLink && ogTitle) {
     const slug = slugFromUrl(absolute(heroLink[2]));
     if (slug && !bySlug.has(slug)) {
-      const image = ogImage ? absolute(ogImage[1]) : "";
+      const image = ogImage ? posterUrl(ogImage[1]) : "";
       bySlug.set(slug, { id: slug, ref: slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
         poster: image || undefined, backdrop: image || undefined, genres: ["anime"] });
     }
@@ -187,7 +203,7 @@ function parseInfo(html, slug) {
   const images = html.match(/<img\b[^>]*>/gi) || [];
   let poster = "";
   const og = /<meta\b[^>]*(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["'][^>]*content\s*=\s*["']([^"']+)["']/i.exec(html);
-  if (og) poster = absolute(og[1]);
+  if (og) poster = posterUrl(og[1]);
   for (const img of images) {
     if (!poster && /poster|cover|portada|logo|banner/i.test(attr(img, "alt") + " " + attr(img, "class"))) {
       poster = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
@@ -203,7 +219,7 @@ function parseInfo(html, slug) {
     if (p) overview = textOf(p[1]).slice(0, 500) || undefined;
   }
   const year = /(?:19|20)\d{2}/.exec(textOf(html.slice(0, 12000)));
-  return { title: title.slice(0, 200), poster: poster ? absolute(poster) : undefined, backdrop: poster ? absolute(poster) : undefined, overview, year: year ? year[0] : undefined };
+  return { title: title.slice(0, 200), poster: poster ? posterUrl(poster) : undefined, backdrop: poster ? posterUrl(poster) : undefined, overview, year: year ? year[0] : undefined };
 }
 
 function parseEpisodes(html, pageUrl) {
@@ -431,8 +447,8 @@ function parseLatestSeries(html) {
       ref: slug,
       title: title.slice(0, 200),
       kind: "series",
-      poster: posterRaw ? absolute(posterRaw) : undefined,
-      backdrop: posterRaw ? absolute(posterRaw) : undefined,
+      poster: posterRaw ? posterUrl(posterRaw) : undefined,
+      backdrop: posterRaw ? posterUrl(posterRaw) : undefined,
       genres: ["anime"]
     });
     seen.add(slug);
@@ -563,8 +579,8 @@ function parseMovieItems(html) {
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
     const slug = path.split("/").filter(Boolean).pop();
     out.push({ id: slug, ref: path, title: title.slice(0, 200), kind: "movie",
-      poster: posterRaw ? absolute(posterRaw) : undefined,
-      backdrop: posterRaw ? absolute(posterRaw) : undefined });
+      poster: posterRaw ? posterUrl(posterRaw) : undefined,
+      backdrop: posterRaw ? posterUrl(posterRaw) : undefined });
     seen.add(path);
   }
   return out;
