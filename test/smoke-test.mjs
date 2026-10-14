@@ -162,7 +162,29 @@ assert.ok(overflowPage1.next, 'Debe ofrecer Ver más cuando quedan películas de
 const overflowPage2 = await overflowPlugin.browse('peliculas', overflowPage1.next);
 assert.equal(overflowPage2.items.length, 20, 'El segundo lote debe contener las 20 películas restantes');
 assert.equal(overflowPage2.items[0].title, 'Movie 21', 'La paginación debe continuar tras los primeros 20 sin repetir');
+
 assert.equal(overflowPage2.next, undefined, 'No debe ofrecer una tercera página cuando ya se alcanzaron las 40 películas');
+
+// La fuente puede devolver HTML 200 de una ficha incompleta desde el catálogo.
+// En ese caso, episodes debe recuperar la ficha canónica como la búsqueda global.
+const incompletePlugin = await import('../plugin.js?catalog-incomplete=2');
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === 'https://donghualife.com/series/shrouding-the-heavens') {
+    return {ok:true,status:200,async text(){return '<html><h1>Shrouding the Heavens</h1><p>Cargando...</p></html>';},async json(){return {};}};
+  }
+  if (url === 'https://donghualife.com/series') {
+    return {ok:true,status:200,async text(){return '<a href="/series/shrouding-heavens"><img alt="Shrouding the Heavens" src="/images/shrouding.jpg"></a>';},async json(){return {};}};
+  }
+  if (url === 'https://donghualife.com/series/shrouding-heavens') {
+    return {ok:true,status:200,async text(){return '<h1>Shrouding the Heavens</h1><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/shrouding-heavens-1-1">Capítulo 1</a>';},async json(){return {};}};
+  }
+  throw new Error('URL inesperada en prueba de ficha incompleta: ' + url);
+};
+const recoveredShrouding = await incompletePlugin.episodes('shrouding-the-heavens');
+assert.equal(recoveredShrouding.series.title, 'Shrouding the Heavens');
+assert.equal(recoveredShrouding.episodes.length, 1, 'Debe recuperar capítulos cuando la ficha inicial devuelve HTML incompleto');
+
 
 // Si un enlace de catálogo conserva un slug viejo, la ficha se recupera por título
 // y se usa la URL canónica que devuelve la búsqueda global.

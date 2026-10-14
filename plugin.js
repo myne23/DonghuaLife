@@ -658,50 +658,49 @@ export async function browse(ref, cursor) {
 
   if (ref === "peliculas" || ref === "peliculas-home") {
     const isHomeRow = ref === "peliculas-home";
-    const seen = new Set(cursorState.seen || []);
-    let sourcePage = page;
-    // Entregamos lotes pequeños y estables. Algunas respuestas del sitio contienen
-    // más títulos que los que Kino muestra por pantalla; si los devolvemos todos de
-    // una vez, Kino no ofrece «Ver más» aunque el catálogo tenga 40 películas.
     const pageSize = cursorState.pageSize || 20;
+    let sourcePage = page;
     let consumed = cursorState.consumed || 0;
-    if (isHomeRow && page === 1 && seen.size === 0) {
+    let previous = cursorState.previous || "";
+    if (isHomeRow && page === 1 && consumed === 0) {
       const firstHtml = await getText(BASE + "/peliculas");
       const firstMovies = parseMovieItems(firstHtml);
       const homeItems = firstMovies.slice(0, MAX_HOME);
-      homeItems.forEach((item) => seen.add(cursorKey(item.ref)));
-      consumed += homeItems.length;
+      consumed = homeItems.length;
+      previous = pageSignature(firstMovies);
       sourcePage = 2;
     }
-    let sourceHtml = "";
-    let totalCount = 0;
-    const items = [];
-    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < pageSize; checked++, sourcePage++) {
-      const fetchedPage = sourcePage;
-      const url = BASE + "/peliculas" + (fetchedPage > 1 ? "?page=" + fetchedPage : "");
-      sourceHtml = await getText(url);
-      totalCount = movieTotalCount(sourceHtml);
-      const parsed = parseMovieItems(sourceHtml);
-      if (!parsed.length) break;
-      for (const item of parsed) {
-        if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
-        items.push(item);
-      }
-      if (items.length || !hasNextPage(sourceHtml, fetchedPage)) break;
-    }
-    if (!items.length) return { items: [] };
-    const resultItems = items.slice(0, pageSize);
-    resultItems.forEach((item) => seen.add(cursorKey(item.ref)));
-    const nextConsumed = consumed + resultItems.length;
-    // No dependemos solamente del enlace «Siguiente»: el sitio a veces entrega
-    // HTML sin el control de paginación o una lista más larga que el lote visible.
+
+    const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+    const sourceHtml = await getText(url);
+    const totalCount = movieTotalCount(sourceHtml);
+    const parsed = parseMovieItems(sourceHtml);
+    if (!parsed.length) return { items: [] };
+
+    // Algunas respuestas de /peliculas?page=N contienen páginas distintas;
+    // otras ignoran el parámetro y repiten el catálogo completo. Detectamos ambos
+    // casos comparando la firma con la respuesta anterior y aplicando offset solo
+    // cuando se repite exactamente el mismo conjunto.
+    const signature = pageSignature(parsed);
+    const repeatedFullPage = Boolean(previous && signature === previous);
+    const remaining = repeatedFullPage ? parsed.slice(consumed) : parsed;
+    if (!remaining.length) return { items: [] };
+
+    const resultItems = remaining.slice(0, pageSize);
+    const nextConsumed = repeatedFullPage ? consumed + resultItems.length : consumed + resultItems.length;
     const hasMoreByCount = totalCount > 0 && nextConsumed < totalCount;
     const hasMoreByLink = hasNextPage(sourceHtml, sourcePage);
+    const hasMoreInSameResponse = repeatedFullPage && remaining.length > resultItems.length;
     const nextPage = sourcePage + 1;
     return {
       items: resultItems,
-      next: nextPage <= 100 && (hasMoreByLink || hasMoreByCount)
-        ? JSON.stringify({ page: nextPage, pageSize, consumed: nextConsumed, seen: Array.from(seen).slice(-30) })
+      next: nextPage <= 100 && (hasMoreInSameResponse || hasMoreByLink || hasMoreByCount)
+        ? JSON.stringify({
+            page: nextPage,
+            pageSize,
+            consumed: nextConsumed,
+            previous: signature
+          })
         : undefined
     };
   }
@@ -838,8 +837,33 @@ export async function episodes(ref) {
     html = await getText(detailUrl);
     slug = slugFromUrl(detailUrl);
   }
-  const info = parseInfo(html, slug);
-  const list = parseEpisodes(html, detailUrl);
+  let info = parseInfo(html, slug);
+  let list = parseEpisodes(html, detailUrl);
+  if (!list.length) {
+    // La ficha puede responder 200 con una página incompleta o un slug alternativo.
+    // Igual que al fallar la descarga, probamos la ficha canónica de la búsqueda,
+    // pero solo en este caso de recuperación para no añadir tráfico a cada apertura.
+    const query = String(baseRef || "").replace(/^special-peli:/, "").replace(/[-_]+/g, " ").trim();
+    const candidates = query ? await search(query).catch(() => []) : [];
+    const canonical = candidates.find((item) =>
+      normalizeSearch(item.title) === normalizeSearch(query) ||
+      normalizeSearch(item.ref) === normalizeSearch(String(baseRef || "").replace(/^special-peli:/, ""))
+    );
+    if (canonical) {
+      const canonicalUrl = seriesUrl(canonical.ref);
+      if (canonicalUrl && canonicalUrl !== detailUrl) {
+        const canonicalHtml = await getText(canonicalUrl);
+        const canonicalList = parseEpisodes(canonicalHtml, canonicalUrl);
+        if (canonicalList.length) {
+          detailUrl = canonicalUrl;
+          html = canonicalHtml;
+          slug = slugFromUrl(canonicalUrl);
+          info = parseInfo(html, slug);
+          list = canonicalList;
+        }
+      }
+    }
+  }
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
 
   const specialMovies = list.filter((episode) => episode.specialMovie);
