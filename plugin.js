@@ -1219,7 +1219,7 @@ function capturedStream(capture) {
   const mediaType = (item) => {
     const url = String(item && item.url || "");
     const mime = String(item && item.mime || "").toLowerCase();
-    if (/mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(url)) return "hls";
+      if (/mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(urlText)) {
     if (/mp4/.test(mime) || /\.mp4(?:[?#]|$)/i.test(url)) return "mp4";
     if (/webm/.test(mime) || /\.webm(?:[?#]|$)/i.test(url)) return "webm";
     return "";
