@@ -817,10 +817,29 @@ export async function episodes(ref) {
   const baseRef = specialMode ? String(ref).slice(specialPrefix.length) : ref;
   const url = seriesUrl(baseRef);
   if (!url) throw kino.error("not_found", "No se encontró la serie");
-  const html = await getText(url);
-  const slug = slugFromUrl(url);
+  let html;
+  let detailUrl = url;
+  let slug = slugFromUrl(url);
+  try {
+    html = await getText(url);
+  } catch (error) {
+    // Si un enlace de catálogo usa un slug antiguo o incorrecto, buscar la ficha
+    // canónica solo tras fallar la URL directa. Esto evita añadir consultas a la
+    // navegación normal y permite que el mismo título abra desde Catálogo y Búsqueda.
+    const query = String(baseRef || "").replace(/[-_]+/g, " ").trim();
+    const candidates = query ? await search(query).catch(() => []) : [];
+    const canonical = candidates.find((item) =>
+      normalizeSearch(item.title) === normalizeSearch(query) ||
+      normalizeSearch(item.ref) === normalizeSearch(baseRef)
+    );
+    if (!canonical || canonical.ref === baseRef) throw error;
+    detailUrl = seriesUrl(canonical.ref);
+    if (!detailUrl) throw error;
+    html = await getText(detailUrl);
+    slug = slugFromUrl(detailUrl);
+  }
   const info = parseInfo(html, slug);
-  const list = parseEpisodes(html, url);
+  const list = parseEpisodes(html, detailUrl);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
 
   const specialMovies = list.filter((episode) => episode.specialMovie);
