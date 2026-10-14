@@ -89,7 +89,7 @@ function parseSeries(html) {
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src") ||
       /(?:background-image)\s*:\s*url\((["']?)([^)"']+)\1\)/i.exec(match[0])?.[2] || "";
     const candidate = {
-      id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
+      id: slug, ref: SERIES + "/" + slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
       kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
       backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"]
     };
@@ -106,7 +106,7 @@ function parseSeries(html) {
     const slug = slugFromUrl(absolute(heroLink[2]));
     if (slug && !bySlug.has(slug)) {
       const image = ogImage ? absolute(ogImage[1]) : "";
-      bySlug.set(slug, { id: slug, ref: slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
+      bySlug.set(slug, { id: slug, ref: SERIES + "/" + slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
         poster: image || undefined, backdrop: image || undefined, genres: ["anime"] });
     }
   }
@@ -256,15 +256,23 @@ export async function search(query) {
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
-  const heading = new RegExp("<h[1-6]\\b[^>]*>[\\s\\S]*?" + headingPattern + "[\\s\\S]*?<\\/h[1-6]>", "i");
-  const match = heading.exec(html);
+  const headings = html.match(/<h[1-6]\\b[^>]*>[\\s\\S]*?<\\/h[1-6]>/gi) || [];
+  let match = null;
+  let offset = 0;
+  for (const heading of headings) {
+    const index = html.indexOf(heading, offset);
+    offset = index + heading.length;
+    if (new RegExp(headingPattern, "i").test(textOf(heading))) {
+      match = { index, length: heading.length };
+      break;
+    }
+  }
   if (!match) return "";
-  const start = match.index + match[0].length;
+  const start = match.index + match.length;
   const tail = html.slice(start, start + (maxChars || 60000));
-  const next = /<h[1-3]\b[^>]*>/i.exec(tail);
+  const next = /<h[1-3]\\b[^>]*>/i.exec(tail);
   return next ? tail.slice(0, next.index) : tail;
 }
-
 function parseHomeRows(homeHtml, latestHtml) {
   const featuredHtml = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
   const trendsHtml = sectionSlice(homeHtml, "tendencias", 45000);
