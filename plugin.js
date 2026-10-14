@@ -422,11 +422,11 @@ function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
     !latest.some((y) => y.id === x.id) && !vip.some((y) => y.id === x.id)).slice(0, MAX_HOME);
 
   return [
-    { id: "destacados", ref: "destacados", title: "DL 0.1.17 · Recomendados para vos", genre: "anime", items: featured },
-    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "DL 0.1.17 · Últimos episodios", genre: "anime", items: latest },
-    { id: "estrenos-vip", ref: "estrenos-vip", title: "DL 0.1.17 · Estrenos VIP", genre: "anime", items: vip },
-    { id: "tendencias", ref: "tendencias", title: "DL 0.1.17 · Tendencias", genre: "anime", items: trends },
-    { id: "series", ref: "series", title: "DL 0.1.17 · Todas las series", genre: "anime", items: allCatalog.slice(0, MAX_HOME) }
+    { id: "destacados", ref: "destacados", title: "DL 0.1.17 · Recomendados para vos", items: featured },
+    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "DL 0.1.17 · Últimos episodios", items: latest },
+    { id: "estrenos-vip", ref: "estrenos-vip", title: "DL 0.1.17 · Estrenos VIP", items: vip },
+    { id: "tendencias", ref: "tendencias", title: "DL 0.1.17 · Tendencias", items: trends },
+    { id: "series", ref: "series", title: "DL 0.1.17 · Todas las series", items: allCatalog.slice(0, MAX_HOME) }
   ].filter((row) => row.items.length);
 }
 function splitCatalog(catalogHtml) {
@@ -442,8 +442,9 @@ function splitCatalog(catalogHtml) {
 
 export async function home() {
   // El Inicio general puede tener menos tiempo para cargar que la sección del plugin.
-  // Consultamos solo el catálogo y usamos un único intento por host: no esperamos
-  // además una segunda página (la portada) ni rondas largas de reintentos.
+  // Consultamos solo el catálogo y usamos un único intento por host. No asignamos genre
+  // a estas filas: es opcional y se usa para agrupar Categorías/En vivo, no para etiquetar
+  // cada fila del Inicio; el plugin de referencia de Kino también deja este campo fuera.
   let catalogHtml = "";
   try { catalogHtml = await getText(SERIES, { fast: true }); }
   catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
@@ -452,10 +453,10 @@ export async function home() {
   const featured = catalog.slice(0, MAX_HOME);
   const split = splitCatalog(catalogHtml);
   const rows = [
-    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.21 · Destacados", genre: "anime", items: featured },
-    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.21 · Catálogo A–M", genre: "anime", items: split.first.slice(0, MAX_HOME) },
-    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.21 · Catálogo N–Z", genre: "anime", items: split.second.slice(0, MAX_HOME) },
-    { id: "series", ref: "series", title: "PRUEBA 0.1.21 · Todas las series", genre: "anime", items: catalog.slice(0, MAX_HOME) }
+    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.22 · Destacados", items: featured },
+    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.22 · Catálogo A–M", items: split.first.slice(0, MAX_HOME) },
+    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.22 · Catálogo N–Z", items: split.second.slice(0, MAX_HOME) },
+    { id: "series", ref: "series", title: "PRUEBA 0.1.22 · Todas las series", items: catalog.slice(0, MAX_HOME) }
   ].filter((row) => row.items.length > 0);
   if (rows.length > 1) return rows;
 
@@ -520,7 +521,7 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
-  info.title = "PRUEBA 0.1.21 · " + info.title;
+  info.title = "PRUEBA 0.1.22 · " + info.title;
   return { series: info, episodes: list };
 }
 
