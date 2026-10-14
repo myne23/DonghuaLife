@@ -163,6 +163,7 @@ const capturePlugin = await import('../plugin.js?browser-capture-test=1');
 const captured = await capturePlugin.resolve('/watch/alpha-donghua-1-1');
 assert.equal(captured.url,'https://cdn.example.test/playlist.m3u8','La captura debe priorizar HLS frente a MP4');
 assert.equal(captured.mime,'application/vnd.apple.mpegurl');
+assert.equal(captured.label,'cdn.example.test · HLS','Debe identificar la fuente activa en el menú Servidor de Kino');
 assert.equal(captured.headers['User-Agent'],'KinoTest','Debe conservar los headers capturados');
 assert.equal(captured.alternatives.length,1,'Debe conservar el MP4 capturado como alternativa al HLS');
 assert.equal(captured.alternatives[0].url,'https://cdn.example.test/low.mp4');
