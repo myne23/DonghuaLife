@@ -1236,8 +1236,16 @@ function capturedStream(capture) {
     return "";
   };
   const rank = (item) => mediaType(item) === "hls" ? 0 : mediaType(item) === "mp4" ? 1 : mediaType(item) === "webm" ? 2 : 3;
-  const candidates = media.filter((item) => item && /^https:\/\//i.test(String(item.url || "")) && mediaType(item))
-    .sort((a, b) => rank(a) - rank(b));
+  const candidates = media.filter((item) => {
+    if (!item || !/^https:\/\//i.test(String(item.url || "")) || !mediaType(item)) return false;
+    try {
+      const u = new URL(String(item.url));
+      // Dailymotion sometimes emits an error callback URL with a .m3u8-looking path;
+      // it is a player error signal, not an alternate stream.
+      if (u.searchParams.has("error")) return false;
+    } catch { return false; }
+    return true;
+  }).sort((a, b) => rank(a) - rank(b));
   const stream = candidates[0];
   if (!stream) return null;
   const mimeFor = (item) => {
@@ -1341,10 +1349,17 @@ async function capturePageStream(url) {
           const kind = /^#EXTM3U/.test(trimmed) ? "hls" :
             /^<!doctype\s+html|^<html\b/i.test(trimmed) ? "html" :
             /^[{[]/.test(trimmed) ? "json-o-datos" :
+            /^<\?xml|^<[a-z][^>]*>/i.test(trimmed) ? "xml-u-otro-markup" :
             !trimmed ? "vacio" : "otro";
+          const xmlRoot = /^\s*(?:<\?xml[^>]*>\s*)?<([a-z][a-z0-9:_-]*)\b/i.exec(body);
+          const hasMpd = /<MPD\b/i.test(body);
+          const hasHlsTags = /#EXT-X-(?:STREAM-INF|TARGETDURATION|MEDIA-SEQUENCE)/i.test(body);
+          const errorHint = /expired|forbidden|unauthorized|not found|access denied|invalid|error|blocked|denied/i.test(body);
           log("Diagnóstico manifiesto", "status:", response.status,
             "content-type:", String(response.headers["content-type"] || "sin-content-type").slice(0, 80),
-            "tipo:", kind, "bytes-texto:", body.length);
+            "tipo:", kind, "raiz:", xmlRoot ? xmlRoot[1].slice(0, 40) : "ninguna",
+            "mpd:", hasMpd, "tagsHls:", hasHlsTags, "indicioError:", errorHint,
+            "bytes-texto:", body.length);
         } catch (error) {
           log("Diagnóstico manifiesto no disponible", String(error && error.message || error).slice(0, 100));
         }
