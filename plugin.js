@@ -402,11 +402,11 @@ function splitCatalog(catalogHtml) {
 function hasNextPage(html, currentPage) {
   const source = String(html || "");
   const expected = Number(currentPage) + 1;
-  const links = source.match(/<a\\b[^>]*href\\s*=\\s*(["'][^"']+["'])[^>]*>[\\s\\S]*?<\\/a>/gi) || [];
+  const links = source.match(/<a\b[^>]*href\s*=\s*(["'])[^"']+\1[^>]*>[\s\S]*?<\/a>/gi) || [];
   for (const link of links) {
-    const match = /[?&]page=(\\d+)/i.exec(link);
+    const match = /[?&]page=(\d+)/i.exec(link);
     if (match && Number(match[1]) === expected) return true;
-    if (/\\brel\\s*=\\s*(["'])next\\1/i.test(link)) return true;
+    if (/\brel\s*=\s*(["'])next\1/i.test(link)) return true;
     if (/(?:siguiente|next|›|»|→)/i.test(textOf(link))) return true;
   }
   return false;
@@ -600,7 +600,8 @@ export async function browse(ref, cursor) {
       const raw = unique(parseSeries(html));
       items.push(...parseFinishedSeries(html));
       hasMore = sourcePage < 100 && (hasNextPage(html, sourcePage) || raw.length >= MAX_PAGE);
-      if (!hasMore || raw.length === 0) break;
+      if (raw.length === 0) { hasMore = false; break; }
+      if (!hasMore) break;
     }
     return {
       items: unique(items).slice(0, MAX_PAGE),
