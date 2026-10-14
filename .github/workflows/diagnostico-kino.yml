@@ -38,10 +38,10 @@ jobs:
         run: |
           node kino-sdk/sdk/run.mjs ./plugin.js home > /tmp/home.json
           node --input-type=module -e 'import fs from "node:fs"; const rows=JSON.parse(fs.readFileSync("/tmp/home.json","utf8")); if (!Array.isArray(rows) || rows.length < 2) { console.error("Inicio no devolvió varias filas:", rows); process.exit(1); } console.log("Filas reales de Inicio:", rows.map(r => r.title).join(" | "));'
-      - name: Probar navegación Ver más de Destacados
-        run: node kino-sdk/sdk/run.mjs ./plugin.js browse destacados 1
-      - name: Probar navegación Ver más de Series
-        run: node kino-sdk/sdk/run.mjs ./plugin.js browse series 1
+      - name: Probar navegación Ver más de Últimos Episodios
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse ultimos-episodios 1
+      - name: Probar navegación Ver más de Catálogo A-Z
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse catalogo-az 1
       - name: Probar búsqueda real
         run: node kino-sdk/sdk/run.mjs ./plugin.js search "Against Sky Supreme"
       - name: Probar episodios con la referencia real de una tarjeta
