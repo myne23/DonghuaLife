@@ -272,22 +272,24 @@ export async function search(query) {
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
-  const headings = html.match(/<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>/gi) || [];
+  const headings = Array.from(String(html || "").matchAll(/<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>/gi));
   let match = null;
-  let offset = 0;
   for (const heading of headings) {
-    const index = html.indexOf(heading, offset);
-    offset = index + heading.length;
-    if (new RegExp(headingPattern, "i").test(textOf(heading))) {
-      match = { index, length: heading.length };
+    if (new RegExp(headingPattern, "i").test(textOf(heading[0]))) {
+      match = { index: heading.index, end: heading.index + heading[0].length };
       break;
     }
   }
   if (!match) return "";
-  const start = match.index + match.length;
-  const tail = html.slice(start, start + (maxChars || 60000));
-  const next = /<h[1-3]\b[^>]*>/i.exec(tail);
-  return next ? tail.slice(0, next.index) : tail;
+  const limit = Math.min(String(html || "").length, match.end + (maxChars || 60000));
+  // Las tarjetas suelen tener su propio <h3>. No debemos cortar la sección al llegar
+  // al título de la primera tarjeta: solo termina cuando aparece otro encabezado de sección.
+  const sectionHeading = /(?:últimos? episodios|estrenos? vip|te recomendamos para vos|recomendados|destacados|tendencias|catálogo|películas|rankings?|calendario|noticias|géneros|votaciones)/i;
+  for (const heading of headings) {
+    if (heading.index <= match.index || heading.index >= limit) continue;
+    if (sectionHeading.test(textOf(heading[0]))) return String(html).slice(match.end, heading.index);
+  }
+  return String(html).slice(match.end, limit);
 }
 function parseLatestSeries(html) {
   const out = [];
@@ -357,31 +359,41 @@ function parseLatestSeries(html) {
 function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
   const allHome = unique(parseSeries(homeHtml));
   const allCatalog = unique(parseSeries(catalogHtml || ""));
-  const allAvailable = unique(allHome.concat(allCatalog));
-  const featuredHtml = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
-  const trendsHtml = sectionSlice(homeHtml, "tendencias", 45000);
+  const allAvailable = unique(allCatalog.concat(allHome));
 
-  let featured = unique(parseSeries(featuredHtml));
-  if (featured.length < 3) featured = allHome.length >= 3 ? allHome.slice(0, 10) : allAvailable.slice(0, 10);
+  // Extraer cada carrusel por su encabezado real. sectionSlice ignora los h3 de las
+  // tarjetas, que antes podían truncar cada sección después del primer elemento.
+  const latestSection = sectionSlice(homeHtml, "últimos episodios", 60000);
+  const vipSection = sectionSlice(homeHtml, "estrenos vip", 60000);
+  const featuredSection = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
+  const trendsSection = sectionSlice(homeHtml, "tendencias", 45000);
+
+  let featured = unique(parseSeries(featuredSection));
+  if (featured.length < 3) featured = allHome.slice(0, 10);
   featured = featured.slice(0, MAX_HOME);
 
-  let latest = unique(parseLatestSeries(latestHtml || ""));
+  // Priorizar los episodios visibles en Inicio; la página separada queda como respaldo.
+  let latest = unique(parseLatestSeries(latestSection));
+  if (latest.length < 3) latest = unique(latest.concat(parseLatestSeries(latestHtml || "")));
   if (!latest.length) latest = unique(parseLatestSeries(homeHtml));
   latest = latest.filter((x) => !featured.some((y) => y.id === x.id)).slice(0, MAX_HOME);
 
-  let trends = unique(parseSeries(trendsHtml));
-  if (trends.length < 3) trends = allAvailable;
-  trends = trends.filter((x) => !featured.some((y) => y.id === x.id) && !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
+  let vip = unique(parseLatestSeries(vipSection));
+  vip = vip.filter((x) => !featured.some((y) => y.id === x.id) &&
+    !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
 
-  // No ocultar toda la portada si la web cambia sus encabezados HTML.
-  // La fila general del catálogo sigue disponible aunque fallen las secciones editoriales.
-  const rows = [
-    { id: "destacados", ref: "destacados", title: "Destacados", items: featured },
-    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos episodios", items: latest },
-    { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends },
-    { id: "series", ref: "series", title: "Todas las series", items: allAvailable.slice(0, MAX_HOME) }
-  ];
-  return rows.filter((row) => row.items.length);
+  let trends = unique(parseSeries(trendsSection));
+  if (trends.length < 3) trends = allAvailable;
+  trends = trends.filter((x) => !featured.some((y) => y.id === x.id) &&
+    !latest.some((y) => y.id === x.id) && !vip.some((y) => y.id === x.id)).slice(0, MAX_HOME);
+
+  return [
+    { id: "destacados", ref: "destacados", title: "Recomendados para vos", genre: "anime", items: featured },
+    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos episodios", genre: "anime", items: latest },
+    { id: "estrenos-vip", ref: "estrenos-vip", title: "Estrenos VIP", genre: "anime", items: vip },
+    { id: "tendencias", ref: "tendencias", title: "Tendencias", genre: "anime", items: trends },
+    { id: "series", ref: "series", title: "Todas las series", genre: "anime", items: allCatalog.slice(0, MAX_HOME) }
+  ].filter((row) => row.items.length);
 }
 export async function home() {
   await null;
@@ -404,14 +416,16 @@ export async function browse(ref, cursor) {
   const page = cursor ? Number(cursor) : 1;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
 
-  if (ref === "ultimos-episodios") {
-    // Esta página enlaza principalmente a /watch/, no a /series/. Usar parseSeries()
-    // dejaba "Ver más" vacío aunque la fila de inicio tuviera contenido.
-    const html = await getText(BASE + "/ultimos-episodios");
-    let items = unique(parseLatestSeries(html));
-    if (!items.length) {
-      const homeHtml = await getText(BASE + "/");
-      items = unique(parseLatestSeries(homeHtml));
+  if (ref === "ultimos-episodios" || ref === "estrenos-vip") {
+    // Estas secciones enlazan a episodios (/watch/), no a fichas (/series/).
+    // Leer el bloque exacto de Inicio evita mezclar Últimos episodios con los VIP.
+    const homeHtml = await getText(BASE + "/");
+    const pattern = ref === "estrenos-vip" ? "estrenos vip" : "últimos episodios";
+    const section = sectionSlice(homeHtml, pattern, 65000);
+    let items = unique(parseLatestSeries(section));
+    if (ref === "ultimos-episodios" && items.length < 3) {
+      const latestHtml = await getText(BASE + "/ultimos-episodios").catch(() => "");
+      items = unique(items.concat(parseLatestSeries(latestHtml)));
     }
     return { items: items.slice(0, MAX_PAGE) };
   }
