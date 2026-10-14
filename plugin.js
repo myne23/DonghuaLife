@@ -1249,6 +1249,14 @@ function capturedStream(capture) {
   const url = String(stream.url);
   const result = { url, mime: mimeFor(stream), label: (sourceLabel(url) + " · " + mediaType(stream).toUpperCase()).slice(0, 48) };
   if (stream.headers && typeof stream.headers === "object") result.headers = stream.headers;
+  else {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (/(^|\\.)dailymotion\\.com$/.test(host)) {
+        result.headers = { Referer: "https://www.dailymotion.com/", Origin: "https://www.dailymotion.com" };
+      }
+    } catch {}
+  }
 
   const seen = new Set([url]);
   const alternatives = [];
