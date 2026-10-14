@@ -69,7 +69,7 @@ assert.deepEqual(categories.map((category) => category.id), ['ultimos-episodios'
 assert.ok(categories.every((category) => category.title && category.ref));
 
 assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
-assert.deepEqual(home.map((row) => row.title), ['Últimos Episodios', 'Tendencias', 'Series Finalizadas', 'Películas', 'Catálogo completo A-Z']);
+assert.deepEqual(home.map((row) => row.title), ['Últimos Episodios', 'Tendencias', 'Series Finalizadas', 'Películas', 'Catálogo completo de A-Z']);
 assert.equal(home[0].items[0].title, 'Gamma Donghua', 'Últimos episodios debe usar la sección real de la portada');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref)));
 assert.equal(home.find((row) => row.id === 'series-finalizadas').items.length, 2);
