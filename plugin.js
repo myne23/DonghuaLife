@@ -402,7 +402,7 @@ function splitCatalog(catalogHtml) {
 function parseFinishedSeries(html) {
   const source = String(html || "");
   return unique(parseSeries(source)).filter((item) => {
-    const at = source.indexOf(item.ref);
+    const at = source.indexOf("/series/" + item.ref);
     if (at < 0) return false;
     const cardStart = source.lastIndexOf("<article", at);
     const cardEnd = source.indexOf("</article>", at);
@@ -472,7 +472,11 @@ export async function home() {
   try { catalogHtml = await getText(SERIES + "?sort=az", { fast: true }); }
   catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
   try { moviesHtml = await getText(BASE + "/movies?page=0", { fast: true }); }
-  catch (e) { log("No se pudo cargar la sección de películas", e.message); }
+  catch (e) {
+    log("No se pudo cargar el catálogo directo de películas", e.message);
+    try { moviesHtml = await getText(BASE + "/genres/Acción", { fast: true }); }
+    catch (fallbackError) { log("No se pudo cargar el respaldo de películas", fallbackError.message); }
+  }
 
   const catalog = unique(parseSeries(catalogHtml));
   const latestSection = sectionSlice(homeHtml, "últimos? episodios", 60000);
@@ -531,7 +535,12 @@ export async function browse(ref, cursor) {
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
 
   if (ref === "peliculas") {
-    const html = await getText(BASE + "/movies?page=" + (page - 1));
+    let html = "";
+    try { html = await getText(BASE + "/movies?page=" + (page - 1)); }
+    catch (e) {
+      if (page !== 1) throw e;
+      html = await getText(BASE + "/genres/Acción");
+    }
     const items = parseMovieItems(html);
     return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
   }
