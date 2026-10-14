@@ -1193,10 +1193,16 @@ function addSourceAlternatives(stream, candidates, selectedUrl) {
     if (!candidate || seen.has(candidate)) continue;
     seen.add(candidate);
     const label = sourceLabel(candidate);
+    // No ofrecer un MP4/WebM del mismo host como "servidor alternativo" cuando
+    // la fuente principal ya es HLS: suele ser una copia fija de baja calidad y
+    // no la variante adaptativa que Kino está reproduciendo.
+    const direct = directStream(candidate);
+    if (direct && stream && /mpegurl|m3u8/i.test(String(stream.mime || stream.url)) &&
+        /^(?:video\/mp4|video\/webm)$/.test(direct.mime) &&
+        safeHostname(candidate) === safeHostname(stream.url)) continue;
     // Una URL de video directa no necesita una segunda llamada a resolve().
     // Entregarla como alternativa nativa evita que Kino tenga que volver a
     // interpretar el proveedor y conserva el tipo MIME correcto.
-    const direct = directStream(candidate);
     if (direct) {
       alternatives.push({ label: direct.label || label, url: direct.url, mime: direct.mime });
     } else {
@@ -1235,9 +1241,17 @@ function capturedStream(capture) {
 
   const seen = new Set([url]);
   const alternatives = [];
+  let primaryHost = "";
+  try { primaryHost = new URL(url).hostname.toLowerCase(); } catch {}
   for (const item of candidates.slice(1)) {
     const alternateUrl = String(item.url);
     if (seen.has(alternateUrl) || alternatives.length >= 8) continue;
+    // Un HLS adaptativo ya contiene sus propias calidades. Evitamos mostrar
+    // como servidor separado el MP4/WebM fijo del mismo host.
+    let alternateHost = "";
+    try { alternateHost = new URL(alternateUrl).hostname.toLowerCase(); } catch {}
+    if (mediaType(stream) === "hls" && alternateHost === primaryHost &&
+        (mediaType(item) === "mp4" || mediaType(item) === "webm")) continue;
     seen.add(alternateUrl);
     const kind = mediaType(item).toUpperCase();
     alternatives.push({
@@ -1260,11 +1274,47 @@ function capturedStream(capture) {
   return result;
 }
 
+async function validateCapturedHls(item) {
+  // Kino a veces captura una URL .m3u8 que en realidad devuelve una página de
+  // error o un texto de bloqueo. Detectarlo antes de entregarla evita el error
+  // de manifiesto malformado y permite probar otra fuente capturada.
+  try {
+    const response = await kino.fetch(String(item.url), {
+      headers: item.headers && typeof item.headers === "object" ? item.headers : {},
+      timeoutMs: 6000
+    });
+    if (!response.ok) {
+      log("Manifiesto HLS rechazado", sourceLabel(item.url), "HTTP", response.status);
+      return false;
+    }
+    const body = String(await response.text() || "").replace(/^\\uFEFF/, "").trimStart();
+    if (!/^#EXTM3U(?:\\s|$)/i.test(body)) {
+      log("Manifiesto HLS rechazado", sourceLabel(item.url), "respuesta no HLS");
+      return false;
+    }
+  } catch (error) {
+    // Si Kino no puede inspeccionar el manifiesto por un límite de red del
+    // runtime, no descartamos la fuente: el reproductor podría sí acceder.
+    log("No se pudo validar el manifiesto HLS", sourceLabel(item.url), error && error.message || String(error));
+  }
+  return true;
+}
+
 async function capturePageStream(url) {
   if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   try {
     const capture = await kino.browser.capture(url, { timeoutMs: 18000, autoplay: true });
-    const stream = capturedStream(capture);
+    const media = Array.isArray(capture && capture.media) ? capture.media : [];
+    const filtered = [];
+    for (const item of media) {
+      const urlText = String(item && item.url || "");
+      const mime = String(item && item.mime || "").toLowerCase();
+      if (/mpegurl|m3u8/.test(mime) || /\\.m3u8(?:[?#]|$)/i.test(urlText)) {
+        if (!await validateCapturedHls(item)) continue;
+      }
+      filtered.push(item);
+    }
+    const stream = capturedStream({ ...capture, media: filtered });
     if (stream) {
       let host = "desconocido";
       try { host = new URL(stream.url).hostname; } catch {}
