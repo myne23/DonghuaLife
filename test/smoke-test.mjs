@@ -23,6 +23,7 @@ const catalogHtml = [
   '<article><span>Finalizado</span><a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a></article>',
 ].join('');
 const catalogPageTwoHtml = '<article><span>En Emisión</span><a href="/series/delta"><img alt="Delta Donghua" src="/images/delta.jpg"></a></article>';
+const trendsPageTwoHtml = '<article><a href="/series/eta"><img alt="Eta Donghua" src="/images/eta.jpg"></a></article>';
 const moviesHtml = '<h2>Pelis Donghuas</h2><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a><a href="/peliculas?page=2">2</a>';
 const moviesPageTwoHtml = '<h2>Películas</h2><a href="/peliculas/movie-two"><img alt="Movie Two" src="/images/movie-two.jpg"></a><a href="/peliculas?page=1">1</a><a href="/peliculas?page=2">2</a>';
 const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a><img alt="Peli Ep 151- 152" src="/images/special.jpg"><a href="/watch/el-inmortal-renegado-temporada-152-1"><span>Capítulo 152</span></a>';
@@ -43,6 +44,7 @@ globalThis.kino = {
     else if (url.startsWith('https://donghualife.com/peliculas')) body = /[?&]page=\d+/.test(url) ? moviesPageTwoHtml : moviesHtml;
     else if (url.startsWith('https://donghualife.com/ultimos-episodios')) body = /[?&]page=\d+/.test(url) ? latestPageTwoHtml : latestHtml;
     else if (url.startsWith('https://donghualife.com/series/alpha')) body = seriesHtml;
+    else if (url.startsWith('https://donghualife.com/series?sort=popular') && url.includes('page=2')) body = trendsPageTwoHtml;
     else if (url.startsWith('https://donghualife.com/series?') && url.includes('page=2')) body = catalogPageTwoHtml;
     else if (url.startsWith('https://donghualife.com/series?') && url.includes('page=3')) body = catalogPageTwoHtml;
     else if (url.startsWith('https://donghualife.com/series?')) body = catalogHtml;
@@ -110,7 +112,7 @@ const pageB = await plugin.browse('tendencias', null);
 assert.ok(pageB.items.length > 0);
 assert.ok(pageB.next, 'Tendencias debe ofrecer una segunda página');
 const pageB2 = await plugin.browse('tendencias', pageB.next);
-assert.equal(pageB2.items[0].title, 'Delta Donghua', 'Tendencias debe continuar con títulos nuevos y no repetir la fila de portada');
+assert.equal(pageB2.items[0].title, 'Eta Donghua', 'Tendencias debe continuar con títulos nuevos y no repetir la fila de portada');
 const found = await plugin.search('Alpha');
 assert.ok(found.length >= 1);
 const episodes = await plugin.episodes('alpha');
