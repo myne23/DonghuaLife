@@ -1302,6 +1302,53 @@ async function capturePageStream(url) {
       let host = "desconocido";
       try { host = new URL(stream.url).hostname; } catch {}
       log("Fuente capturada", host, stream.mime, "alternativas:", Array.isArray(stream.alternatives) ? stream.alternatives.length : 0);
+
+      // Diagnóstico temporal y seguro: nunca registrar URL completa, valores de query,
+      // cookies ni valores de cabeceras.
+      const safeMediaInfo = (item, index) => {
+        try {
+          const u = new URL(String(item && item.url || ""));
+          const path = u.pathname.split("/").filter(Boolean);
+          const ext = /\.m3u8$/i.test(u.pathname) ? "m3u8" :
+            /\.mpd$/i.test(u.pathname) ? "mpd" :
+            /\.mp4$/i.test(u.pathname) ? "mp4" :
+            /\.webm$/i.test(u.pathname) ? "webm" : "sin-extension";
+          return {
+            n: index + 1,
+            host: u.hostname,
+            tipo: String(item && item.mime || "sin-mime").slice(0, 48),
+            ext,
+            segmentos: path.length,
+            queryKeys: Array.from(new Set(Array.from(u.searchParams.keys()))).slice(0, 12),
+            headers: Object.keys(item && item.headers || {}).map((key) => key.toLowerCase()).sort()
+          };
+        } catch { return { n: index + 1, url: "invalida" }; }
+      };
+      const capturedMedia = Array.isArray(capture && capture.media) ? capture.media : [];
+      log("Diagnóstico fuentes capturadas", JSON.stringify(capturedMedia.slice(0, 8).map(safeMediaInfo)));
+
+      // Esta petición es solo diagnóstica; nunca invalida la fuente capturada.
+      if (kino.fetch && stream.mime === "application/vnd.apple.mpegurl") {
+        try {
+          const probeHeaders = {};
+          const primary = capturedMedia.find((item) => item && item.url === stream.url);
+          for (const [key, value] of Object.entries(primary && primary.headers || {})) {
+            if (/^(referer|origin|user-agent|cookie)$/i.test(key) && typeof value === "string") probeHeaders[key] = value;
+          }
+          const response = await kino.fetch(stream.url, { headers: probeHeaders, timeoutMs: 2500 });
+          const body = String(response.text() || "");
+          const trimmed = body.trimStart();
+          const kind = /^#EXTM3U/.test(trimmed) ? "hls" :
+            /^<!doctype\s+html|^<html\b/i.test(trimmed) ? "html" :
+            /^[{[]/.test(trimmed) ? "json-o-datos" :
+            !trimmed ? "vacio" : "otro";
+          log("Diagnóstico manifiesto", "status:", response.status,
+            "content-type:", String(response.headers["content-type"] || "sin-content-type").slice(0, 80),
+            "tipo:", kind, "bytes-texto:", body.length);
+        } catch (error) {
+          log("Diagnóstico manifiesto no disponible", String(error && error.message || error).slice(0, 100));
+        }
+      }
     } else {
       const media = Array.isArray(capture && capture.media) ? capture.media.length : 0;
       log("El navegador integrado capturó", media, "recursos, pero ninguno parece una fuente de video compatible");
