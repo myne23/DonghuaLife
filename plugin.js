@@ -17,16 +17,20 @@ async function getText(url, options) {
   // DonghuaLife sometimes answers 502 when several requests arrive together. Retry transient
   // gateway errors, especially for a series detail: otherwise Kino may fall back to global search.
   for (let attempt = 0; attempt < 3; attempt++) {
+    let response;
     try {
-      const response = await kino.fetch(url, options);
-      if (response.ok) return await response.text();
-      lastError = new Error("El sitio respondió " + response.status);
-      if (![502, 503, 504].includes(response.status)) throw lastError;
+      response = await kino.fetch(url, options);
     } catch (error) {
       lastError = error;
-      const status = Number(error && error.status);
-      if (status && ![502, 503, 504].includes(status)) throw error;
+      if (attempt < 2) {
+        await Promise.resolve();
+        continue;
+      }
+      throw error;
     }
+    if (response.ok) return response.text();
+    lastError = new Error("El sitio respondió " + response.status);
+    if (![502, 503, 504].includes(response.status) || attempt === 2) throw lastError;
     // Yield between retries so the next request is not issued in the same microtask turn.
     await Promise.resolve();
   }
