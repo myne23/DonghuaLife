@@ -1,0 +1,44 @@
+name: Diagnóstico Kino SDK
+
+on:
+  push:
+    branches: [diagnostico-sdk]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout DonghuaLife
+        uses: actions/checkout@v4
+      - name: Checkout SDK oficial de Kino
+        uses: actions/checkout@v4
+        with:
+          repository: kinotvapp/kino-plugin-archive
+          path: kino-sdk
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Comparar acceso a dominio principal y beta
+        run: |
+          for host in donghualife.com beta.donghualife.com; do
+            for path in / /series /series/against-sky-supreme; do
+              printf '%s%s -> ' "https://$host" "$path"
+              curl -L -sS -o /tmp/donghua-page -w '%{http_code} (%{size_download} bytes)\n' --max-time 20 "https://$host$path" || true
+            done
+          done
+      - name: Validar contrato y manifiesto
+        run: node kino-sdk/sdk/validate.mjs .
+      - name: Probar Inicio con datos reales
+        run: node kino-sdk/sdk/run.mjs ./plugin.js home
+      - name: Probar navegación Ver más de Destacados
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse destacados 1
+      - name: Probar navegación Ver más de Series
+        run: node kino-sdk/sdk/run.mjs ./plugin.js browse series 1
+      - name: Probar búsqueda real
+        run: node kino-sdk/sdk/run.mjs ./plugin.js search "Against Sky Supreme"
+      - name: Probar episodios de una serie real
+        run: node kino-sdk/sdk/run.mjs ./plugin.js episodes "https://donghualife.com/series/against-sky-supreme"
