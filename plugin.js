@@ -1152,9 +1152,21 @@ async function resolveDailymotion(url, referer) {
     const urls = [];
     mediaUrlsInObject(metadata, urls, 0);
     const uniqueUrls = Array.from(new Set(urls));
+    const safeUrlInfo = (item) => {
+      try {
+        const u = new URL(item);
+        return { host: u.hostname, path: u.pathname.slice(0, 100),
+          tipo: /\.m3u8$/i.test(u.pathname) ? "hls" : /\.mp4$/i.test(u.pathname) ? "mp4" :
+            /\.webm$/i.test(u.pathname) ? "webm" : "otro", queryKeys: Array.from(u.searchParams.keys()).slice(0, 8) };
+      } catch { return { tipo: "invalido" }; }
+    };
+    log("Medios en metadatos Dailymotion", JSON.stringify(uniqueUrls.slice(0, 12).map(safeUrlInfo)));
     const best = uniqueUrls.find((item) => /\.m3u8$/i.test(new URL(item).pathname)) ||
       uniqueUrls.find((item) => /\.mp4$/i.test(new URL(item).pathname)) || uniqueUrls[0];
-    if (best) return directStream(best);
+    if (best) {
+      log("Tipo de medio Dailymotion elegido", safeUrlInfo(best).tipo);
+      return directStream(best);
+    }
   } catch (error) {
     log("No se pudieron leer los metadatos públicos de Dailymotion", error && error.message || String(error));
   }
@@ -1304,13 +1316,22 @@ async function resolveRenderedDailymotionPage(url) {
   try {
     // La captura de red puede recoger callbacks de anuncios de Dailymotion en vez
     // del manifiesto. Leemos el DOM tras ejecutar los scripts y buscamos el ID del embed.
-    const page = await kino.browser.page(url, {
-      timeoutMs: 4000,
-      waitFor: /dailymotion\.com\/(?:embed\/video|video\/)|<iframe[^>]+(?:dailymotion|dmcdn)/i
-    });
+    const page = await kino.browser.page(url, { timeoutMs: 6000 });
     const html = String(page && page.html || "");
+    const pageUrl = page && page.finalUrl || url;
     log("Página del reproductor procesada", "status:", page && page.status, "html:", html.length);
-    const embed = parseEmbed(html, page && page.finalUrl || url);
+    const iframeInfo = [];
+    const iframeRe = /<(?:iframe|video|source)\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*(["'])([^"']+)\1[^>]*>/gi;
+    let iframeMatch;
+    while ((iframeMatch = iframeRe.exec(html)) && iframeInfo.length < 12) {
+      try {
+        const u = new URL(absolute(iframeMatch[2], pageUrl));
+        iframeInfo.push({ tag: /^<iframe/i.test(iframeMatch[0]) ? "iframe" : /^<video/i.test(iframeMatch[0]) ? "video" : "source",
+          host: u.hostname, path: u.pathname.slice(0, 100), queryKeys: Array.from(u.searchParams.keys()).slice(0, 8) });
+      } catch {}
+    }
+    log("Elementos multimedia del DOM", JSON.stringify(iframeInfo));
+    const embed = parseEmbed(html, pageUrl);
     if (embed && /(?:dailymotion\.com|dai\.ly)/i.test(embed) && !isDirectMediaUrl(embed)) {
       const stream = await resolveProviderUrl(embed, page.finalUrl || url, false);
       if (stream) {
@@ -1319,7 +1340,15 @@ async function resolveRenderedDailymotionPage(url) {
       }
     }
     // Algunos reproductores guardan el iframe en JSON o en atributos no estándar.
-    const candidates = extractSourceCandidates(html, page && page.finalUrl || url);
+    const candidates = extractSourceCandidates(html, pageUrl);
+    log("Candidatos del DOM", JSON.stringify(candidates.slice(0, 10).map((candidate) => {
+      try {
+        const u = new URL(candidate);
+        return { host: u.hostname, path: u.pathname.slice(0, 100),
+          tipo: /\.m3u8$/i.test(u.pathname) ? "hls" : /\.mp4$/i.test(u.pathname) ? "mp4" :
+            /\.webm$/i.test(u.pathname) ? "webm" : "embed", queryKeys: Array.from(u.searchParams.keys()).slice(0, 8) };
+      } catch { return { tipo: "invalido" }; }
+    })));
     for (const candidate of candidates) {
       if (!/(?:dailymotion\.com|dai\.ly)/i.test(candidate) || isDirectMediaUrl(candidate)) continue;
       const stream = await resolveProviderUrl(candidate, page.finalUrl || url, false);
