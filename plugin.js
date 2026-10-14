@@ -501,7 +501,7 @@ export async function home() {
     { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends },
     { id: "series-finalizadas", ref: "series-finalizadas", title: "Series Finalizadas", items: finished },
     { id: "peliculas", ref: "peliculas", title: "Películas", items: movies },
-    { id: "catalogo-az", ref: "catalogo-az", title: "Catálogo completo A-Z", items: alphabetic }
+    { id: "catalogo-az", ref: "catalogo-az", title: "Catálogo completo de A-Z", items: alphabetic }
   ].filter((row) => row.items.length > 0);
 }
 
@@ -514,7 +514,7 @@ export async function section({ tab }) {
     { id: "tendencias", label: "Tendencias" },
     { id: "series-finalizadas", label: "Series Finalizadas" },
     { id: "peliculas", label: "Películas" },
-    { id: "catalogo-az", label: "Catálogo completo A-Z" }
+    { id: "catalogo-az", label: "Catálogo completo de A-Z" }
   ];
   const chosen = tabs.some((entry) => entry.id === tab) ? tab : "inicio";
   const rows = await home();
@@ -532,7 +532,7 @@ export async function categories() {
     { id: "tendencias", title: "Tendencias", ref: "tendencias" },
     { id: "series-finalizadas", title: "Series Finalizadas", ref: "series-finalizadas" },
     { id: "peliculas", title: "Películas", ref: "peliculas" },
-    { id: "catalogo-az", title: "Catálogo completo A-Z", ref: "catalogo-az" }
+    { id: "catalogo-az", title: "Catálogo completo de A-Z", ref: "catalogo-az" }
   ];
 }
 
