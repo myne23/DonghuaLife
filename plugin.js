@@ -402,14 +402,44 @@ function splitCatalog(catalogHtml) {
 function hasNextPage(html, currentPage) {
   const source = String(html || "");
   const expected = Number(currentPage) + 1;
-  const links = source.match(/<a\b[^>]*href\s*=\s*(["'])[^"']+\1[^>]*>[\s\S]*?<\/a>/gi) || [];
+  // Pagination can be a numbered link, rel=next anchor, button, or JS-driven control.
+  const links = source.match(/<(?:a|button)\b[^>]*>[\s\S]*?<\/(?:a|button)>/gi) || [];
   for (const link of links) {
-    const match = /[?&]page=(\d+)/i.exec(link);
+    const match = /(?:[?&]page=|data-page\s*=\s*["']?)(\d+)/i.exec(link);
     if (match && Number(match[1]) === expected) return true;
     if (/\brel\s*=\s*(["'])next\1/i.test(link)) return true;
-    if (/(?:siguiente|next|›|»|→)/i.test(textOf(link))) return true;
+    if (/(?:siguiente|next|›|»|→|cargar más|ver más)/i.test(textOf(link))) return true;
   }
-  return false;
+  const pageNumbers = Array.from(source.matchAll(/(?:[?&]page=|data-page\s*=\s*["']?)(\d+)/gi), m => Number(m[1]));
+  return pageNumbers.some((number) => number > Number(currentPage));
+}
+
+function browseCursor(cursor) {
+  if (!cursor) return { page: 1, previous: "" };
+  try {
+    const parsed = JSON.parse(String(cursor));
+    if (parsed && Number.isInteger(parsed.page) && parsed.page >= 1) {
+      return { page: parsed.page, previous: String(parsed.previous || "") };
+    }
+  } catch {}
+  const page = Number(cursor);
+  return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "" };
+}
+
+function pageSignature(items) {
+  if (!items || !items.length) return "";
+  const refs = items.map((item) => String(item.ref || item.id || ""));
+  return refs.length + ":" + refs.slice(0, 3).join(",") + ":" + refs.slice(-3).join(",");
+}
+
+function pagedResult(items, page, previous) {
+  const signature = pageSignature(items);
+  // If the site silently ignores ?page=N, stop instead of endlessly repeating the same batch.
+  if (!items.length || (previous && signature === previous)) return { items: [] };
+  return {
+    items,
+    next: page < 100 ? JSON.stringify({ page: page + 1, previous: signature }) : undefined
+  };
 }
 
 function parseFinishedSeries(html) {
@@ -551,7 +581,8 @@ export async function categories() {
 }
 
 export async function browse(ref, cursor) {
-  const page = cursor ? Number(cursor) : 1;
+  const cursorState = browseCursor(cursor);
+  const page = cursorState.page;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
 
   if (ref === "peliculas") {
@@ -562,8 +593,7 @@ export async function browse(ref, cursor) {
       html = await getText(BASE + "/genres/Acción");
     }
     const items = parseMovieItems(html).slice(0, MAX_PAGE);
-    const more = page < 100 && (hasNextPage(html, page - 1) || items.length >= MAX_PAGE);
-    return { items, next: more ? String(page + 1) : undefined };
+    return pagedResult(items, page, cursorState.previous);
   }
 
   if (ref === "ultimos-episodios") {
@@ -577,8 +607,7 @@ export async function browse(ref, cursor) {
       parsed = unique(parseLatestSeries(sectionSlice(homeHtml, "últimos? episodios", 60000)));
     }
     const items = mapToCatalog(parsed, catalog).slice(0, MAX_PAGE);
-    const more = page < 100 && (hasNextPage(latestHtml, page - 1) || parsed.length >= MAX_PAGE);
-    return { items, next: more ? String(page + 1) : undefined };
+    return pagedResult(items, page, cursorState.previous);
   }
 
   if (ref === "tendencias") {
@@ -594,18 +623,23 @@ export async function browse(ref, cursor) {
   if (ref === "series-finalizadas") {
     const items = [];
     let sourcePage = page;
-    let hasMore = false;
-    for (let checked = 0; checked < 5 && sourcePage <= 100 && items.length < MAX_HOME; checked++, sourcePage++) {
+    let lastRawCount = 0;
+    // A source page may contain few finished titles even while the catalog has more pages.
+    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_HOME; checked++, sourcePage++) {
       const html = await getText(SERIES + "?sort=az" + (sourcePage > 1 ? "&page=" + sourcePage : ""));
       const raw = unique(parseSeries(html));
+      lastRawCount = raw.length;
+      if (!raw.length) break;
       items.push(...parseFinishedSeries(html));
-      hasMore = sourcePage < 100 && (hasNextPage(html, sourcePage) || raw.length >= MAX_PAGE);
-      if (raw.length === 0) { hasMore = false; break; }
-      if (!hasMore) break;
     }
+    const resultItems = unique(items).slice(0, MAX_PAGE);
+    const signature = pageSignature(resultItems);
+    if (cursorState.previous && signature && signature === cursorState.previous) return { items: [] };
     return {
-      items: unique(items).slice(0, MAX_PAGE),
-      next: hasMore && sourcePage <= 100 ? String(sourcePage) : undefined
+      items: resultItems,
+      next: sourcePage <= 100 && lastRawCount > 0
+        ? JSON.stringify({ page: sourcePage, previous: signature })
+        : undefined
     };
   }
 
@@ -613,8 +647,7 @@ export async function browse(ref, cursor) {
     const html = await getText(SERIES + "?sort=az" + (page > 1 ? "&page=" + page : ""));
     const catalog = unique(parseSeries(html));
     const items = catalog.slice().sort((a, b) => normalizeSearch(a.title).localeCompare(normalizeSearch(b.title)));
-    const more = page < 100 && (hasNextPage(html, page) || items.length >= MAX_PAGE);
-    return { items, next: more ? String(page + 1) : undefined };
+    return pagedResult(items, page, cursorState.previous);
   }
 
   throw kino.error("not_found", "La categoría solicitada no existe");
