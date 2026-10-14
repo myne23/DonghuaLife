@@ -47,7 +47,7 @@ globalThis.kino = {
 
 const plugin = await import('../plugin.js?smoke=2');
 const home = await plugin.home();
-assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'Destacados'));
+assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'Recomendados para vos'));
 assert.ok(home.some((row) => row.id === 'ultimos-episodios' && row.title === 'Últimos episodios'));
 assert.ok(home.some((row) => row.id === 'estrenos-vip' && row.title === 'Estrenos VIP'));
 assert.ok(home.some((row) => row.id === 'tendencias' && row.title === 'Tendencias'));

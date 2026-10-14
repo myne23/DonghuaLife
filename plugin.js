@@ -13,9 +13,28 @@ function log(...args) {
 }
 
 async function getText(url, options) {
-  const response = await kino.fetch(url, options);
-  if (!response.ok) throw new Error("El sitio respondió " + response.status);
-  return response.text();
+  let lastError;
+  // DonghuaLife sometimes answers 502 when several requests arrive together. Retry transient
+  // gateway errors, especially for a series detail: otherwise Kino may fall back to global search.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let response;
+    try {
+      response = await kino.fetch(url, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+      throw error;
+    }
+    if (response.ok) return response.text();
+    lastError = new Error("El sitio respondió " + response.status);
+    if (![502, 503, 504].includes(response.status) || attempt === 2) throw lastError;
+    // Back off briefly; immediate retries tend to hit the same gateway failure.
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  throw lastError || new Error("No se pudo leer la página");
 }
 
 function decodeHtml(value) {
@@ -334,7 +353,6 @@ function parseLatestSeries(html) {
       .replace(/^recomendado\s+/i, "")
       .replace(/\bEP\s*\d+\b/ig, "")
       .replace(/\b(?:capítulo|episodio)\s*\d+\b/ig, "")
-      .replace(/\bVIP\b/ig, "")
       .replace(/\s+/g, " ")
       .trim();
     // El texto de la tarjeta tiene prioridad: el bloque vecino puede contener enlaces
@@ -397,14 +415,17 @@ function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
 }
 export async function home() {
   await null;
-  const results = await Promise.all([
-    getText(BASE + "/").catch((e) => { log("Falló el inicio", e.message); return ""; }),
-    getText(BASE + "/ultimos-episodios").catch((e) => { log("Falló últimos episodios", e.message); return ""; }),
-    getText(SERIES).catch((e) => { log("Falló el catálogo", e.message); return ""; })
-  ]);
-  let homeHtml = results[0];
-  const latestHtml = results[1];
-  const catalogHtml = results[2];
+  // Keep these requests sequential: the site intermittently returns 502 when its homepage,
+  // latest episodes and catalog are fetched in parallel from the same client.
+  let homeHtml = "";
+  let latestHtml = "";
+  let catalogHtml = "";
+  try { homeHtml = await getText(BASE + "/"); }
+  catch (e) { log("Falló el inicio", e.message); }
+  try { latestHtml = await getText(BASE + "/ultimos-episodios"); }
+  catch (e) { log("Falló últimos episodios", e.message); }
+  try { catalogHtml = await getText(SERIES); }
+  catch (e) { log("Falló el catálogo", e.message); }
   if (!homeHtml) homeHtml = catalogHtml;
   const rows = parseHomeRows(homeHtml, latestHtml, catalogHtml);
   if (rows.length) return rows;
