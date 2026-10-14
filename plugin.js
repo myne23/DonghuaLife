@@ -12,46 +12,74 @@ function log(...args) {
   try { kino.log(...args); } catch {}
 }
 
+const responseCache = new Map();
+const pendingRequests = new Map();
+const RESPONSE_CACHE_TTL = 20000;
+const RESPONSE_CACHE_LIMIT = 100;
+
 async function getText(url, options) {
-  let lastError;
-  const urls = [String(url)];
-  // El dominio principal devuelve 502 intermitentes desde el runtime de Kino aunque
-  // el mismo contenido esté disponible en beta. Probar ambos hosts evita dejar Inicio vacío.
-  if (String(url).startsWith(BASE)) {
-    const fallback = "https://beta.donghualife.com" + String(url).slice(BASE.length);
-    if (fallback !== String(url)) urls.push(fallback);
-  }
-  const fast = Boolean(options && options.fast);
-  const requestOptions = { ...(options || {}) };
-  delete requestOptions.fast;
-  const headers = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
-    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-    ...(options && options.headers ? options.headers : {})
-  };
-  // Home can have a shorter UI deadline than opening the dedicated plugin section.
-  // Its fast mode tries the primary host and the beta fallback once each, without
-  // three rounds of retries that can leave the global Home without plugin rows.
-  for (let attempt = 0; attempt < (fast ? 1 : 3); attempt++) {
-    for (const candidate of urls) {
-      let response;
-      try {
-        response = await kino.fetch(candidate, { ...requestOptions, headers });
-      } catch (error) {
-        lastError = error;
-        continue;
+  const originalUrl = String(url);
+  const referer = String(options && options.headers && options.headers.Referer || "");
+  const cacheKey = originalUrl + "|" + referer;
+  const now = Date.now();
+  const cached = responseCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.text;
+  if (cached) responseCache.delete(cacheKey);
+  if (pendingRequests.has(cacheKey)) return pendingRequests.get(cacheKey);
+
+  const request = (async () => {
+    let lastError;
+    const urls = [originalUrl];
+    // Si el dominio principal devuelve 502, probar el host beta una vez antes de fallar.
+    if (originalUrl.startsWith(BASE)) {
+      const fallback = "https://beta.donghualife.com" + originalUrl.slice(BASE.length);
+      if (fallback !== originalUrl) urls.push(fallback);
+    }
+    const fast = Boolean(options && options.fast);
+    const requestOptions = { ...(options || {}) };
+    delete requestOptions.fast;
+    const headers = {
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
+      "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      ...(options && options.headers ? options.headers : {})
+    };
+    // Evitamos seis solicitudes consecutivas por página: un intento a cada host y,
+    // solo si ambos fallan con 502/503/504, una segunda ronda.
+    const attempts = fast ? 1 : 2;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      for (const candidate of urls) {
+        let response;
+        try {
+          response = await kino.fetch(candidate, { ...requestOptions, headers });
+        } catch (error) {
+          lastError = error;
+          continue;
+        }
+        if (response.ok) {
+          const text = await response.text();
+          responseCache.set(cacheKey, { text, expiresAt: Date.now() + RESPONSE_CACHE_TTL });
+          while (responseCache.size > RESPONSE_CACHE_LIMIT) {
+            responseCache.delete(responseCache.keys().next().value);
+          }
+          return text;
+        }
+        lastError = new Error("El sitio respondió " + response.status);
+        if (![502, 503, 504].includes(response.status)) throw lastError;
       }
-      if (response.ok) return response.text();
-      lastError = new Error("El sitio respondió " + response.status);
-      if (![502, 503, 504].includes(response.status)) throw lastError;
+      if (attempt + 1 < attempts) {
+        // Una única pausa corta solo cuando ambos hosts fallan.
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
     }
-    if (attempt < 2) {
-      // Back off before trying both hosts again; immediate retries often hit the same gateway error.
-      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
-    }
+    throw lastError || new Error("No se pudo leer la página");
+  })();
+  pendingRequests.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    pendingRequests.delete(cacheKey);
   }
-  throw lastError || new Error("No se pudo leer la página");
 }
 function decodeHtml(value) {
   return String(value || "")
@@ -436,21 +464,29 @@ function hasNextPage(html, currentPage) {
 }
 
 function browseCursor(cursor) {
-  if (!cursor) return { page: 1, previous: "" };
+  if (!cursor) return { page: 1, previous: "", pageSize: 0 };
   try {
     const parsed = JSON.parse(String(cursor));
     if (parsed && Number.isInteger(parsed.page) && parsed.page >= 1) {
       return {
         page: parsed.page,
         previous: String(parsed.previous || ""),
+        pageSize: Number.isInteger(parsed.pageSize) && parsed.pageSize > 0 ? parsed.pageSize : 0,
         seen: Array.isArray(parsed.seen) ? parsed.seen.filter((value) => typeof value === "string").slice(0, 200) : []
       };
     }
   } catch {}
   const page = Number(cursor);
-  return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "", seen: [] };
+  return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "", pageSize: 0, seen: [] };
 }
 
+function movieTotalCount(html) {
+  const text = textOf(html);
+  const match = /(\d[\d.,]*)\s*(?:pel[ií]culas?|movies?)\b/i.exec(text);
+  if (!match) return 0;
+  const count = Number(match[1].replace(/[.,](?=\d{3}\b)/g, "").replace(/[^\d]/g, ""));
+  return Number.isFinite(count) ? count : 0;
+}
 function cursorKey(value) {
   // Cursor de tamaño acotado: Kino limita next a 2048 caracteres y los refs completos
   // de 25-50 títulos pueden superar ese límite. FNV-1a mantiene claves cortas y estables.
@@ -623,30 +659,42 @@ export async function browse(ref, cursor) {
     const isHomeRow = ref === "peliculas-home";
     const seen = new Set(cursorState.seen || []);
     let sourcePage = page;
+    let pageSize = cursorState.pageSize || 0;
     if (isHomeRow && page === 1 && seen.size === 0) {
       const firstHtml = await getText(BASE + "/peliculas");
-      parseMovieItems(firstHtml).slice(0, MAX_HOME).forEach((item) => seen.add(cursorKey(item.ref)));
+      const firstMovies = parseMovieItems(firstHtml);
+      pageSize = firstMovies.length;
+      firstMovies.slice(0, MAX_HOME).forEach((item) => seen.add(cursorKey(item.ref)));
       sourcePage = 2;
     }
     let sourceHtml = "";
+    let totalCount = 0;
     const items = [];
     for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_PAGE; checked++, sourcePage++) {
-      const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+      const fetchedPage = sourcePage;
+      const url = BASE + "/peliculas" + (fetchedPage > 1 ? "?page=" + fetchedPage : "");
       sourceHtml = await getText(url);
+      totalCount = movieTotalCount(sourceHtml);
       const parsed = parseMovieItems(sourceHtml);
       if (!parsed.length) break;
+      if (!pageSize) pageSize = parsed.length;
       for (const item of parsed) {
         if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
         items.push(item);
         seen.add(cursorKey(item.ref));
       }
-      if (items.length || !hasNextPage(sourceHtml, sourcePage)) break;
+      if (items.length || !hasNextPage(sourceHtml, fetchedPage)) break;
     }
     if (!items.length) return { items: [] };
+    // Algunos HTML del catálogo no exponen el enlace «Siguiente» al parser, pero sí
+    // informan el total de películas. Usamos ese total como respaldo para el cursor.
+    const hasMoreByCount = totalCount > 0 && pageSize > 0 && sourcePage * pageSize < totalCount;
+    const hasMoreByLink = hasNextPage(sourceHtml, sourcePage);
+    const nextPage = sourcePage + 1;
     return {
       items: items.slice(0, MAX_PAGE),
-      next: hasNextPage(sourceHtml, sourcePage)
-        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-30) })
+      next: nextPage <= 100 && (hasMoreByLink || hasMoreByCount)
+        ? JSON.stringify({ page: nextPage, pageSize, seen: Array.from(seen).slice(-30) })
         : undefined
     };
   }
