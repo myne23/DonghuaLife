@@ -658,7 +658,7 @@ export async function browse(ref, cursor) {
 
   if (ref === "peliculas") {
     const sourcePage = page;
-    const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+    const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage + "&sort=newest" : "?sort=newest");
     const sourceHtml = await getText(url);
     const totalCount = movieTotalCount(sourceHtml);
     const parsed = parseMovieItems(sourceHtml);
@@ -707,7 +707,7 @@ export async function browse(ref, cursor) {
       sourcePage = 2;
     }
 
-    const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+    const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage + "&sort=newest" : "?sort=newest");
     const sourceHtml = await getText(url);
     const totalCount = movieTotalCount(sourceHtml);
     const parsed = parseMovieItems(sourceHtml);
