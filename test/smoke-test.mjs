@@ -173,7 +173,8 @@ delete globalThis.kino.browser;
 const nativeSourceUrls = [
   'https://pub-abc.r2.dev/episode/master.m3u8',
   'https://pub-abc.r2.dev/episode/backup.m3u8',
-  'https://www.dailymotion.com/embed/video/x9abcde'
+  'https://www.dailymotion.com/embed/video/x9abcde',
+  'https://rumble.com/embed/v123abc/'
 ];
 const nativeSourceJson = JSON.stringify({sources:nativeSourceUrls.map((url) => ({url}))}).replace(/\//g, '\\/');
 globalThis.kino.fetch = async (input) => {
@@ -186,17 +187,25 @@ globalThis.kino.fetch = async (input) => {
     const body = JSON.stringify({qualities:{auto:[{type:'application/x-mpegURL',url:'https://pub-abc.r2.dev/episode/dailymotion.m3u8'}]}});
     return {ok:true,status:200,async text(){return body;},async json(){return JSON.parse(body);}};
   }
+  if (url === 'https://rumble.com/embed/v123abc/') {
+    const body = '<video><source src="https://rumble.com/video.mp4"></video>';
+    return {ok:true,status:200,async text(){return body;},async json(){return {};}};
+  }
   throw new Error('URL inesperada en prueba de resolvers propios: ' + url);
 };
 const nativeSourcePlugin = await import('../plugin.js?native-source-resolver-test=1');
 const nativeSourceStream = await nativeSourcePlugin.resolve('/watch/shrouding-heavens-1-2');
 assert.equal(nativeSourceStream.url, 'https://pub-abc.r2.dev/episode/master.m3u8', 'Debe resolver primero la fuente R2 directa');
 assert.equal(nativeSourceStream.mime, 'application/vnd.apple.mpegurl');
-assert.equal(nativeSourceStream.alternatives.length, 2, 'Debe conservar la fuente directa y el embed como alternativas');
+assert.equal(nativeSourceStream.alternatives.length, 3, 'Debe conservar las fuentes directas y los embeds como alternativas');
 assert.equal(nativeSourceStream.alternatives[0].url, 'https://pub-abc.r2.dev/episode/backup.m3u8', 'Las fuentes directas deben enviarse a Kino sin una resolución diferida');
 assert.equal(nativeSourceStream.alternatives[0].mime, 'application/vnd.apple.mpegurl');
 assert.equal(nativeSourceStream.alternatives[0].label, 'R2');
 assert.equal(nativeSourceStream.alternatives[1].label, 'Dailymotion');
+assert.equal(nativeSourceStream.alternatives[2].label, 'Rumble');
+const rumbleFallback = await nativeSourcePlugin.resolve(nativeSourceStream.alternatives[2].ref);
+assert.equal(rumbleFallback.url, 'https://rumble.com/video.mp4', 'El resolver Rumble debe aceptar una fuente MP4 pública expuesta por su reproductor');
+assert.equal(rumbleFallback.mime, 'video/mp4');
 const dailymotionFallback = await nativeSourcePlugin.resolve(nativeSourceStream.alternatives[1].ref);
 assert.equal(dailymotionFallback.url, 'https://pub-abc.r2.dev/episode/dailymotion.m3u8', 'El resolver Dailymotion debe extraer el HLS de sus metadatos públicos');
 assert.equal(dailymotionFallback.mime, 'application/vnd.apple.mpegurl');
