@@ -656,7 +656,43 @@ export async function browse(ref, cursor) {
   const page = cursorState.page;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
 
-  if (ref === "peliculas" || ref === "peliculas-home") {
+  if (ref === "peliculas") {
+    const sourcePage = page;
+    const url = BASE + "/peliculas" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+    const sourceHtml = await getText(url);
+    const totalCount = movieTotalCount(sourceHtml);
+    const parsed = parseMovieItems(sourceHtml);
+    if (!parsed.length) return { items: [] };
+
+    const signature = pageSignature(parsed);
+    const consumed = cursorState.consumed || 0;
+    const repeatedFullPage = Boolean(cursorState.previous && signature === cursorState.previous);
+    // El sitio usa páginas reales de tamaños distintos (25 en la primera y 15 en la segunda).
+    // Conservamos todos los elementos de cada página. Solo aplicamos offset si el servidor
+    // ignora ?page=N y vuelve a entregar el mismo catálogo completo.
+    const remaining = repeatedFullPage ? parsed.slice(consumed) : parsed;
+    if (!remaining.length) return { items: [] };
+    const items = repeatedFullPage ? remaining.slice(0, cursorState.pageSize || 20) : remaining;
+    const nextConsumed = consumed + items.length;
+    const hasMoreInRepeatedResponse = repeatedFullPage && remaining.length > items.length;
+    const hasMore = hasMoreInRepeatedResponse ||
+      (totalCount > 0 && nextConsumed < totalCount) ||
+      hasNextPage(sourceHtml, sourcePage);
+
+    return {
+      items,
+      next: hasMore && sourcePage < 100
+        ? JSON.stringify({
+            page: sourcePage + 1,
+            pageSize: cursorState.pageSize || 20,
+            consumed: nextConsumed,
+            previous: signature
+          })
+        : undefined
+    };
+  }
+
+  if (ref === "peliculas-home") {
     const isHomeRow = ref === "peliculas-home";
     const pageSize = cursorState.pageSize || 20;
     let sourcePage = page;
