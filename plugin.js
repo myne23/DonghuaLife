@@ -62,30 +62,56 @@ function unique(items) {
 }
 
 function parseSeries(html) {
-  const out = [];
-  const seen = new Set();
-  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/series\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const bySlug = new Map();
+  // Reunimos todos los enlaces a una ficha antes de elegir el mejor: la página repite
+  // el mismo enlace en el título, la imagen y el botón «DETALLES».
+  const re = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/series\\/[^"']+)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;
   let match;
-  while ((match = re.exec(html)) && out.length < MAX_PAGE) {
+  while ((match = re.exec(html))) {
     const url = absolute(match[2]);
     const slug = slugFromUrl(url);
-    if (!slug || slug === "series" || seen.has(slug)) continue;
+    if (!slug || slug === "series") continue;
     const inner = match[3];
-    const imgMatch = /<img\b[^>]*>/i.exec(inner);
+    const imgMatch = /<img\\b[^>]*>/i.exec(inner);
     const img = imgMatch ? imgMatch[0] : "";
-    const title = attr(img, "alt") || attr(img, "title") || textOf(inner) || slug.replace(/-/g, " ");
-    if (!title || /^(series|donghuas|todas|popular|reciente|a-z)$/i.test(title)) continue;
-    const poster = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
-    out.push({
-      id: slug, ref: slug, title: title.slice(0, 200), kind: "series",
-      poster: poster ? absolute(poster) : undefined,
-      genres: ["anime"]
-    });
-    seen.add(slug);
+    let title = attr(img, "alt") || attr(img, "title") || "";
+    const innerText = textOf(inner);
+    if (!title && innerText && !/^(ver ahora|detalles|ver detalles|ver ahora detalles|ver m[aá]s|play)$/i.test(innerText)) title = innerText;
+    // El enlace de acción no tiene el nombre de la serie; buscar texto útil en el
+    // bloque cercano y metadatos habituales de tarjetas.
+    const around = html.slice(Math.max(0, match.index - 1800), Math.min(html.length, re.lastIndex + 1800));
+    if (!title || /^(ver ahora|detalles|ver detalles|ver ahora detalles|ver m[aá]s|play)$/i.test(title)) {
+      const heading = /<h[1-4]\\b[^>]*>([\\s\\S]*?)<\\/h[1-4]>/i.exec(around);
+      const labelled = /(?:data-title|aria-label|title)\\s*=\\s*(["'])(.*?)\\1/i.exec(match[0]);
+      title = (labelled && labelled[2]) || (heading && textOf(heading[1])) || title;
+    }
+    const badTitle = !title || /^(ver ahora|detalles|ver detalles|ver ahora detalles|ver m[aá]s|play|series|donghuas|todas|popular|reciente|a-z)$/i.test(title.trim());
+    const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src") ||
+      /(?:background-image)\\s*:\\s*url\\((["']?)([^)"']+)\\1\\)/i.exec(match[0])?.[2] || "";
+    const candidate = {
+      id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
+      kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
+      backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"]
+    };
+    const prior = bySlug.get(slug);
+    const score = (x) => (x.poster ? 4 : 0) + (/detalles|ver ahora|play/i.test(x.title) ? -10 : 0) + (x.title.toLowerCase() !== slug.replace(/-/g, " ") ? 2 : 0);
+    if (!prior || score(candidate) > score(prior)) bySlug.set(slug, candidate);
   }
-  return out;
+  // El inicio tiene un banner destacado que no siempre está dentro de un enlace /series/.
+  // Si todavía no apareció como tarjeta, recuperamos el título desde los metadatos de la página.
+  const ogTitle = /<meta\\b[^>]*(?:property|name)\\s*=\\s*["'](?:og:title|twitter:title)["'][^>]*content\\s*=\\s*["']([^"']+)["']/i.exec(html);
+  const ogImage = /<meta\\b[^>]*(?:property|name)\\s*=\\s*["'](?:og:image|twitter:image)["'][^>]*content\\s*=\\s*["']([^"']+)["']/i.exec(html);
+  const heroLink = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/series\\/[^"']+)\\1[^>]*>[\\s\\S]{0,5000}?<\\/a>/i.exec(html);
+  if (heroLink && ogTitle) {
+    const slug = slugFromUrl(absolute(heroLink[2]));
+    if (slug && !bySlug.has(slug)) {
+      const image = ogImage ? absolute(ogImage[1]) : "";
+      bySlug.set(slug, { id: slug, ref: slug, title: textOf(ogTitle[1]).slice(0, 200), kind: "series",
+        poster: image || undefined, backdrop: image || undefined, genres: ["anime"] });
+    }
+  }
+  return Array.from(bySlug.values()).slice(0, MAX_PAGE);
 }
-
 function seriesUrl(ref) {
   const slug = slugFromUrl(ref) || String(ref || "").replace(/^series:/, "").replace(/^\/+|\/+$/g, "");
   if (!/^[a-z0-9-]{1,180}$/i.test(slug)) return "";
@@ -97,13 +123,15 @@ function parseInfo(html, slug) {
   const title = h1 ? textOf(h1[1]) : slug.replace(/-/g, " ");
   const images = html.match(/<img\b[^>]*>/gi) || [];
   let poster = "";
+  const og = /<meta\\b[^>]*(?:property|name)\\s*=\\s*["'](?:og:image|twitter:image)["'][^>]*content\\s*=\\s*["']([^"']+)["']/i.exec(html);
+  if (og) poster = absolute(og[1]);
   for (const img of images) {
-    if (/poster|cover|portada/i.test(attr(img, "alt") + " " + attr(img, "class"))) {
-      poster = attr(img, "data-src") || attr(img, "src");
+    if (!poster && /poster|cover|portada|logo|banner/i.test(attr(img, "alt") + " " + attr(img, "class"))) {
+      poster = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
       if (poster) break;
     }
   }
-  if (!poster && images[0]) poster = attr(images[0], "data-src") || attr(images[0], "src");
+  if (!poster && images[0]) poster = attr(images[0], "data-src") || attr(images[0], "data-lazy-src") || attr(images[0], "data-original") || attr(images[0], "src");
   let overview;
   const synopsisAt = html.search(/sinopsis|descripci[oó]n/i);
   if (synopsisAt >= 0) {
@@ -112,7 +140,7 @@ function parseInfo(html, slug) {
     if (p) overview = textOf(p[1]).slice(0, 500) || undefined;
   }
   const year = /(?:19|20)\d{2}/.exec(textOf(html.slice(0, 12000)));
-  return { title: title.slice(0, 200), poster: poster ? absolute(poster) : undefined, overview, year: year ? year[0] : undefined };
+  return { title: title.slice(0, 200), poster: poster ? absolute(poster) : undefined, backdrop: poster ? absolute(poster) : undefined, overview, year: year ? year[0] : undefined };
 }
 
 function parseEpisodes(html, pageUrl) {
@@ -129,8 +157,11 @@ function parseEpisodes(html, pageUrl) {
     if (!m) continue;
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
-    const label = textOf(match[3]);
-    out.push({ season, number, ref: path, title: (label || "Capítulo " + number).slice(0, 180) });
+    let label = textOf(match[3]);
+    label = label.replace(/\\b(?:fuentes?|subt[ií]tulos?|vip)\\b/gi, " ").replace(/\\s+/g, " ").trim();
+    if (!label || /^(?:cap[ií]tulo\\s*)?\\d+$/i.test(label) || label.length > 100) label = "Capítulo " + number;
+    else if (!/cap[ií]tulo|episodio/i.test(label)) label = "Capítulo " + number + " · " + label;
+    out.push({ season, number, ref: path, title: label.slice(0, 180) });
     seen.add(path);
   }
   return out.sort((a, b) => a.season - b.season || a.number - b.number);
@@ -202,13 +233,19 @@ export async function search(query) {
   let items = [];
   try { items = parseSeries(await getText(SERIES + "?search=" + encodeURIComponent(term))); }
   catch (e) { log("Falló la búsqueda del sitio", e.message); }
-  const normalized = term.toLocaleLowerCase();
-  items = unique(items.filter((item) => item.title.toLocaleLowerCase().includes(normalized) || item.ref.toLocaleLowerCase().includes(normalized)));
+  const normalized = term.toLowerCase();
+  const matches = (item) => item.title.toLowerCase().includes(normalized) || item.ref.toLowerCase().includes(normalized);
+  items = unique(items.filter(matches));
   if (!items.length) {
-    try {
-      const fallback = parseSeries(await getText(SERIES));
-      items = unique(fallback.filter((item) => item.title.toLocaleLowerCase().includes(normalized) || item.ref.toLocaleLowerCase().includes(normalized)));
-    } catch (e) { log("No se pudo consultar el catálogo", e.message); }
+    // Algunas versiones del sitio ignoran ?search=. Buscar también en el catálogo y en el
+    // inicio, pero no filtrar por el texto de los botones («Detalles»).
+    for (const url of [SERIES, BASE + "/", BASE + "/?page=1"]) {
+      try {
+        const fallback = parseSeries(await getText(url));
+        items = unique(items.concat(fallback.filter(matches)));
+      } catch (e) { log("No se pudo consultar el catálogo alternativo", e.message); }
+      if (items.length) break;
+    }
   }
   return items.slice(0, MAX_PAGE);
 }
