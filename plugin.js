@@ -1,5 +1,5 @@
 /// <reference path="./kino.d.ts" />
-// Fuente de donghua para Kino. Usa páginas públicas y fuentes enlazadas por el propio sitio.
+// Fuente de donghua para Kino. Usa páginas públicas y resolvers por proveedor.
 // No intenta saltarse cuentas, CAPTCHA, restricciones de acceso ni reproductores protegidos.
 
 const BASE = "https://donghualife.com";
