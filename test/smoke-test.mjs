@@ -43,15 +43,19 @@ globalThis.kino = {
 
 const plugin = await import('../plugin.js?smoke=2');
 const home = await plugin.home();
-assert.deepEqual(home.map((row) => row.id), ['destacados', 'ultimos-episodios', 'tendencias']);
+assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'Destacados'));
+assert.ok(home.some((row) => row.id === 'ultimos-episodios' && row.title === 'Últimos episodios'));
+assert.ok(home.some((row) => row.id === 'tendencias' && row.title === 'Tendencias'));
 assert.equal(home[0].items[0].title, 'Alpha Donghua');
 assert.equal(home[1].items[0].title, 'Gamma Donghua');
-assert.equal(home[1].items[0].ref, 'gamma-donghua');
+assert.equal(home[1].items[0].ref, 'https://donghualife.com/series/gamma-donghua');
 assert.equal(home[2].items[0].title, 'Delta Donghua');
 assert.ok(home.some((row) => row.id === 'series' && row.title === 'Todas las series'));
+assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
+assert.equal(home[0].items[0].ref, 'https://donghualife.com/series/alpha');
 const found = await plugin.search('Alpha');
 assert.ok(found.length >= 1);
-const episodes = await plugin.episodes('alpha');
+const episodes = await plugin.episodes('https://donghualife.com/series/alpha');
 assert.equal(episodes.episodes.length,3);
 assert.equal(episodes.episodes[1].number,2);
 assert.equal(episodes.episodes[2].number,3);
