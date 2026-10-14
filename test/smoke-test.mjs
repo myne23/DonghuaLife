@@ -97,6 +97,8 @@ assert.equal(JSON.parse(pageMovies.next).page, 2, 'Películas debe ofrecer una s
 const pageMovies2 = await plugin.browse('peliculas', pageMovies.next);
 assert.equal(pageMovies2.items[0].title, 'Movie Two', 'Películas debe cargar títulos nuevos');
 assert.equal(pageMovies2.next, undefined, 'Películas no debe ofrecer otra página si la web no tiene Siguiente');
+assert.ok(fetchCalls.includes('https://donghualife.com/peliculas?sort=newest'), 'Películas debe usar el orden Reciente al cargar la primera página');
+assert.ok(fetchCalls.includes('https://donghualife.com/peliculas?page=2&sort=newest'), 'Películas debe usar la URL de página 2 con sort=newest para evitar el 502 de la ruta sin orden');
 const pageMoviesHome = await plugin.browse('peliculas-home', null);
 assert.equal(pageMoviesHome.items[0].title, 'Movie Two', 'Ver más desde Home debe saltar las películas ya mostradas en la fila');
 const pageLatest = await plugin.browse('ultimos-episodios', null);
