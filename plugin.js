@@ -862,10 +862,34 @@ export async function browse(ref, cursor) {
 
   throw kino.error("not_found", "La categoría solicitada no existe");
 }
+function declaredSeasonCount(html) {
+  const match = /(\d{1,2})\s+temporadas?\b/i.exec(textOf(html));
+  return match ? Math.min(50, Number(match[1])) : 0;
+}
+
+function episodeRouteForSeason(episodeRef, season) {
+  const path = String(episodeRef || "");
+  const modern = /^(.*\/watch\/.+?)-temporada-\d{1,3}-\d{1,4}\/?$/i.exec(path);
+  if (modern) return modern[1] + "-temporada-" + season + "-1";
+  const legacy = /^(.*\/watch\/.+?)-\d{1,3}-\d{1,4}\/?$/i.exec(path);
+  return legacy ? legacy[1] + "-" + season + "-1" : "";
+}
+
+function seasonItems(list, season) {
+  return list.filter((episode) => !episode.specialMovie && episode.season === season);
+}
+
 export async function episodes(ref) {
   const specialPrefix = "special-peli:";
-  const specialMode = String(ref || "").startsWith(specialPrefix);
-  const baseRef = specialMode ? String(ref).slice(specialPrefix.length) : ref;
+  const seasonPrefix = "season:";
+  const requestedRef = String(ref || "");
+  const specialMode = requestedRef.startsWith(specialPrefix);
+  const seasonMatch = !specialMode && requestedRef.startsWith(seasonPrefix)
+    ? /^season:(.+):(\d{1,3})$/.exec(requestedRef)
+    : null;
+  const selectedSeason = seasonMatch ? Number(seasonMatch[2]) : 0;
+  const baseRef = specialMode ? requestedRef.slice(specialPrefix.length)
+    : seasonMatch ? seasonMatch[1] : ref;
   const url = seriesUrl(baseRef);
   if (!url) throw kino.error("not_found", "No se encontró la serie");
   let html;
@@ -875,8 +899,7 @@ export async function episodes(ref) {
     html = await getText(url);
   } catch (error) {
     // Si un enlace de catálogo usa un slug antiguo o incorrecto, buscar la ficha
-    // canónica solo tras fallar la URL directa. Esto evita añadir consultas a la
-    // navegación normal y permite que el mismo título abra desde Catálogo y Búsqueda.
+    // canónica solo tras fallar la URL directa.
     const query = String(baseRef || "").replace(/[-_]+/g, " ").trim();
     const candidates = query ? await search(query).catch(() => []) : [];
     const canonical = candidates.find((item) =>
@@ -889,17 +912,17 @@ export async function episodes(ref) {
     html = await getText(detailUrl);
     slug = slugFromUrl(detailUrl);
   }
+
   let info = parseInfo(html, slug);
   let list = parseEpisodes(html, detailUrl);
   if (!list.length) {
-    // La ficha puede responder 200 con una página incompleta o un slug alternativo.
-    // Igual que al fallar la descarga, probamos la ficha canónica de la búsqueda,
-    // pero solo en este caso de recuperación para no añadir tráfico a cada apertura.
-    const query = String(baseRef || "").replace(/^special-peli:/, "").replace(/[-_]+/g, " ").trim();
+    // La ficha puede responder 200 con HTML incompleto. Recuperar la ficha canónica
+    // de la búsqueda solo cuando no se pudieron leer episodios.
+    const query = String(baseRef || "").replace(/[-_]+/g, " ").trim();
     const candidates = query ? await search(query).catch(() => []) : [];
     const canonical = candidates.find((item) =>
       normalizeSearch(item.title) === normalizeSearch(query) ||
-      normalizeSearch(item.ref) === normalizeSearch(String(baseRef || "").replace(/^special-peli:/, ""))
+      normalizeSearch(item.ref) === normalizeSearch(baseRef)
     );
     if (canonical) {
       const canonicalUrl = seriesUrl(canonical.ref);
@@ -918,6 +941,32 @@ export async function episodes(ref) {
   }
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
 
+  // Algunas fichas muestran solo los episodios de la temporada seleccionada, aunque
+  // anuncian varias temporadas. Cada ruta /watch/<serie>-<temporada>-1 contiene la
+  // lista real de esa temporada; la consultamos cuando la ficha no trae la lista entera.
+  const seasonCount = declaredSeasonCount(html);
+  const firstEpisode = list.find((episode) => !episode.specialMovie);
+  if (seasonCount > 1 && firstEpisode) {
+    for (let number = 1; number <= seasonCount; number++) {
+      const existing = seasonItems(list, number);
+      // Una sola referencia puede ser un enlace destacado de temporada, no la lista completa.
+      if (existing.length > 1) continue;
+      const route = episodeRouteForSeason(firstEpisode.ref, number);
+      if (!route) continue;
+      try {
+        const seasonUrl = absolute(route, detailUrl);
+        const seasonHtml = await getText(seasonUrl);
+        const seasonList = seasonItems(parseEpisodes(seasonHtml, seasonUrl), number);
+        if (seasonList.length > existing.length) {
+          list = list.filter((episode) => episode.specialMovie || episode.season !== number);
+          list.push(...seasonList);
+        }
+      } catch (error) {
+        log("No se pudo cargar la temporada " + number, error.message);
+      }
+    }
+  }
+
   const specialMovies = list.filter((episode) => episode.specialMovie);
   if (specialMode) {
     const selected = specialMovies[0];
@@ -928,17 +977,47 @@ export async function episodes(ref) {
     };
   }
 
-  const regularEpisodes = list.filter((episode) => !episode.specialMovie);
+  const regularEpisodes = list.filter((episode) => !episode.specialMovie)
+    .sort((a, b) => a.season - b.season || a.number - b.number);
+  const seasonNumbers = Array.from(new Set(regularEpisodes.map((episode) => episode.season)))
+    .filter((number) => number >= 1 && number <= 50)
+    .sort((a, b) => a - b);
+  const seasons = seasonNumbers.map((number) => ({
+    id: slug + "-season-" + number,
+    ref: "season:" + slug + ":" + number,
+    title: "Temporada " + number,
+    number,
+    current: selectedSeason ? number === selectedSeason : number === (seasonNumbers[0] || 1)
+  }));
+
   if (specialMovies.length && regularEpisodes.length) {
+    // Conservar el especial como una opción separada y mantener las temporadas normales.
     const seasonRef = specialPrefix + slug;
+    const specialSeasonNumber = (seasonNumbers[seasonNumbers.length - 1] || 0) + 1;
+    seasons.push({
+      id: slug + "-special-peli",
+      ref: seasonRef,
+      title: specialMovies[0].title,
+      number: specialSeasonNumber
+    });
+  }
+
+  const selectedEpisodes = selectedSeason
+    ? regularEpisodes.filter((episode) => episode.season === selectedSeason)
+    : regularEpisodes;
+  if (selectedSeason && !selectedEpisodes.length) {
+    throw kino.error("not_found", "No se encontraron episodios para la temporada " + selectedSeason);
+  }
+
+  if (seasonNumbers.length > 1 || selectedSeason) {
     return {
       series: info,
-      episodes: regularEpisodes,
-      seasons: [
-        { id: slug, ref: slug, title: "Temporada 1", number: 1, current: true },
-        { id: slug + "-special-peli", ref: seasonRef, title: specialMovies[0].title, number: 2 }
-      ]
+      episodes: selectedEpisodes,
+      seasons
     };
+  }
+  if (specialMovies.length && regularEpisodes.length) {
+    return { series: info, episodes: selectedEpisodes, seasons };
   }
   return { series: info, episodes: list };
 }
