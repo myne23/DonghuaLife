@@ -1198,7 +1198,7 @@ function addSourceAlternatives(stream, candidates, selectedUrl) {
     // interpretar el proveedor y conserva el tipo MIME correcto.
     const direct = directStream(candidate);
     if (direct) {
-      alternatives.push({ label, url: direct.url, mime: direct.mime });
+      alternatives.push({ label: direct.label || label, url: direct.url, mime: direct.mime });
     } else {
       // Los embeds se resuelven de forma diferida solo si la persona los elige.
       alternatives.push({ label, ref: "source:" + candidate });
