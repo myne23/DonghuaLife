@@ -273,4 +273,3 @@ assert.ok(seasonFour.episodes.every((item) => item.season === 4), 'La temporada 
 assert.equal(seasonFour.seasons.find((item) => item.number === 4).current, true);
 
 console.log('Prueba simulada correcta: catálogo, búsqueda, episodios, reproducción, paginación de películas, recuperación de fichas y separación de temporadas.');
-console.log('Prueba simulada correcta: catálogo, búsqueda, episodios, reproducción, paginación de películas y recuperación de fichas con slug antiguo.');
