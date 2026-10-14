@@ -19,8 +19,10 @@ const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-tempora
 const catalogHtml = [
   '<article><span>Finalizado</span><a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a></article>',
   '<article><span>En Emisión</span><a href="/series/beta"><img alt="Beta Donghua" src="/images/beta.jpg"></a></article>',
-  '<article><span>Finalizado</span><a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a></article>'
+  '<article><span>Finalizado</span><a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a></article>',
+  '<a href="/series?sort=az&page=2">Siguiente</a>'
 ].join('');
+const catalogPageTwoHtml = '<article><span>En Emisión</span><a href="/series/delta"><img alt="Delta Donghua" src="/images/delta.jpg"></a></article>';
 const moviesHtml = '<h2>Pelis Donghuas</h2><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a>';
 const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a>';
 const directWatch = '<video src="https://cdn.example.test/video.mp4"></video>';
@@ -40,6 +42,7 @@ globalThis.kino = {
     else if (url.startsWith('https://donghualife.com/movies')) body = moviesHtml;
     else if (url === 'https://donghualife.com/ultimos-episodios') body = latestHtml;
     else if (url.startsWith('https://donghualife.com/series/alpha')) body = seriesHtml;
+    else if (url.startsWith('https://donghualife.com/series?') && url.includes('page=2')) body = catalogPageTwoHtml;
     else if (url.startsWith('https://donghualife.com/series?')) body = catalogHtml;
     else if (url.startsWith('https://donghualife.com/series')) body = catalogHtml;
     else if (url.startsWith('https://donghualife.com/watch/')) body = directWatch;
@@ -78,6 +81,10 @@ assert.ok(home.every((row) => !Object.hasOwn(row, 'genre')), 'Las filas de Home 
 assert.equal(home.find((row) => row.id === 'catalogo-az').items[0].title, 'Alpha Donghua');
 const pageA = await plugin.browse('catalogo-az', '1');
 assert.ok(pageA.items.length > 0);
+assert.equal(pageA.next, '2', 'El catálogo debe ofrecer la siguiente página si la fuente la anuncia');
+const pageA2 = await plugin.browse('catalogo-az', pageA.next);
+assert.equal(pageA2.items[0].title, 'Delta Donghua', 'El cursor debe cargar resultados nuevos sin repetir la primera página');
+assert.equal(pageA2.next, undefined, 'No debe ofrecer otra página si la fuente no tiene más resultados');
 const pageB = await plugin.browse('tendencias', '1');
 assert.ok(pageB.items.length > 0);
 const found = await plugin.search('Alpha');
