@@ -309,20 +309,22 @@ function parseLatestSeries(html) {
   return out;
 }
 
-function parseHomeRows(homeHtml, latestHtml) {
+function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
   const allHome = unique(parseSeries(homeHtml));
+  const allCatalog = unique(parseSeries(catalogHtml || ""));
+  const allAvailable = unique(allHome.concat(allCatalog));
   const featuredHtml = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
   const trendsHtml = sectionSlice(homeHtml, "tendencias", 45000);
   let featured = unique(parseSeries(featuredHtml));
   // Si el HTML no conserva el encabezado de la sección, usar el catálogo de la portada
   // para no terminar con una sola tarjeta en el banner.
-  if (featured.length < 3) featured = allHome.slice(0, Math.min(10, allHome.length));
+  if (featured.length < 3) featured = allAvailable.slice(0, Math.min(10, allAvailable.length));
   featured = featured.slice(0, MAX_HOME);
   let latest = unique(parseLatestSeries(latestHtml || ""));
   if (!latest.length) latest = unique(parseLatestSeries(homeHtml));
   latest = latest.filter((x) => !featured.some((y) => y.id === x.id)).slice(0, MAX_HOME);
   let trends = unique(parseSeries(trendsHtml));
-  if (trends.length < 3) trends = allHome;
+  if (trends.length < 3) trends = allAvailable;
   trends = trends.filter((x) => !featured.some((y) => y.id === x.id) && !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
   return [
     // Cada fila tiene su propio ref: Kino usa este valor para «Ver más»,
@@ -335,12 +337,16 @@ function parseHomeRows(homeHtml, latestHtml) {
 
 export async function home() {
   await null;
-  let homeHtml = "";
-  let latestHtml = "";
-  try { homeHtml = await getText(BASE + "/"); } catch (e) { log("Falló el inicio", e.message); }
-  try { latestHtml = await getText(BASE + "/ultimos-episodios"); } catch (e) { log("Falló últimos episodios", e.message); }
-  if (!homeHtml) homeHtml = await getText(SERIES);
-  const rows = parseHomeRows(homeHtml, latestHtml);
+  const results = await Promise.all([
+    getText(BASE + "/").catch((e) => { log("Falló el inicio", e.message); return ""; }),
+    getText(BASE + "/ultimos-episodios").catch((e) => { log("Falló últimos episodios", e.message); return ""; }),
+    getText(SERIES).catch((e) => { log("Falló el catálogo", e.message); return ""; })
+  ]);
+  let homeHtml = results[0];
+  const latestHtml = results[1];
+  const catalogHtml = results[2];
+  if (!homeHtml) homeHtml = catalogHtml;
+  const rows = parseHomeRows(homeHtml, latestHtml, catalogHtml);
   if (rows.length) return rows;
   return [{ id: "destacados", title: "Destacados", genre: "anime", items: unique(parseSeries(homeHtml)).slice(0, MAX_HOME) }];
 }
