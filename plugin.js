@@ -406,11 +406,11 @@ function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
     !latest.some((y) => y.id === x.id) && !vip.some((y) => y.id === x.id)).slice(0, MAX_HOME);
 
   return [
-    { id: "destacados", ref: "destacados", title: "Recomendados para vos", genre: "anime", items: featured },
-    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos episodios", genre: "anime", items: latest },
-    { id: "estrenos-vip", ref: "estrenos-vip", title: "Estrenos VIP", genre: "anime", items: vip },
-    { id: "tendencias", ref: "tendencias", title: "Tendencias", genre: "anime", items: trends },
-    { id: "series", ref: "series", title: "Todas las series", genre: "anime", items: allCatalog.slice(0, MAX_HOME) }
+    { id: "destacados", ref: "destacados", title: "DL 0.1.17 · Recomendados para vos", genre: "anime", items: featured },
+    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "DL 0.1.17 · Últimos episodios", genre: "anime", items: latest },
+    { id: "estrenos-vip", ref: "estrenos-vip", title: "DL 0.1.17 · Estrenos VIP", genre: "anime", items: vip },
+    { id: "tendencias", ref: "tendencias", title: "DL 0.1.17 · Tendencias", genre: "anime", items: trends },
+    { id: "series", ref: "series", title: "DL 0.1.17 · Todas las series", genre: "anime", items: allCatalog.slice(0, MAX_HOME) }
   ].filter((row) => row.items.length);
 }
 export async function home() {
@@ -479,6 +479,7 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
+  info.title = "DL 0.1.17 · " + info.title;
   return { series: info, episodes: list };
 }
 
