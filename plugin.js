@@ -188,10 +188,7 @@ function parseEpisodes(html, pageUrl) {
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
     if (seen.has(path)) continue;
-    // Algunas fichas colocan una película junto a los episodios con un enlace como
-    // "Peli 151-152". No es una temporada: la película se lista en el catálogo Películas.
     const linkLabel = textOf(match[3]);
-    if (/\b(?:peli(?:cula)?|movie|film)\b/i.test(linkLabel + " " + path)) continue;
     // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
     const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
@@ -202,12 +199,16 @@ function parseEpisodes(html, pageUrl) {
     if (season < 1 || number < 1) continue;
     let label = textOf(match[3]);
     label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
-    if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
+    const specialMovie = /^peli\s*ep\s*\d+\s*-\s*\d+$/i.test(label);
+    if (specialMovie) {
+      // El sitio lo presenta como una opción especial junto a Temporada 1.
+      // Conservamos exactamente el rótulo de la web para usarlo como nombre de temporada.
+    } else if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
       label = "Capítulo " + number;
     } else {
       label = "Capítulo " + number + " · " + label;
     }
-    out.push({ season, number, ref: path, title: label.slice(0, 180) });
+    out.push({ season, number, ref: path, title: label.slice(0, 180), specialMovie });
     seen.add(path);
   }
   return out.sort((a, b) => a.season - b.season || a.number - b.number);
@@ -654,13 +655,39 @@ export async function browse(ref, cursor) {
   throw kino.error("not_found", "La categoría solicitada no existe");
 }
 export async function episodes(ref) {
-  const url = seriesUrl(ref);
+  const specialPrefix = "special-peli:";
+  const specialMode = String(ref || "").startsWith(specialPrefix);
+  const baseRef = specialMode ? String(ref).slice(specialPrefix.length) : ref;
+  const url = seriesUrl(baseRef);
   if (!url) throw kino.error("not_found", "No se encontró la serie");
   const html = await getText(url);
   const slug = slugFromUrl(url);
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
+
+  const specialMovies = list.filter((episode) => episode.specialMovie);
+  if (specialMode) {
+    const selected = specialMovies[0];
+    if (!selected) throw kino.error("not_found", "No se encontró el especial de la serie");
+    return {
+      series: info,
+      episodes: [{ season: 1, number: 1, ref: selected.ref, title: selected.title }]
+    };
+  }
+
+  const regularEpisodes = list.filter((episode) => !episode.specialMovie);
+  if (specialMovies.length && regularEpisodes.length) {
+    const seasonRef = specialPrefix + slug;
+    return {
+      series: info,
+      episodes: regularEpisodes,
+      seasons: [
+        { id: slug, ref: slug, title: "Temporada 1", number: 1, current: true },
+        { id: slug + "-special-peli", ref: seasonRef, title: specialMovies[0].title, number: 2 }
+      ]
+    };
+  }
   return { series: info, episodes: list };
 }
 
