@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.47 deja de descartar las fuentes HLS capturadas basándose en una petición de comprobación separada. También reconoce los iframes públicos de Dailymotion en la página del episodio y añade Referer/Origin de Dailymotion a sus fuentes CDN.
+La versión 0.1.48 conserva las cabeceras de sesión capturadas por el navegador y completa Referer/Origin de Dailymotion cuando faltan, tanto en la fuente principal como en las alternativas.
 
 ## Estado del desarrollo
 
