@@ -47,10 +47,14 @@ globalThis.kino = {
 
 const plugin = await import('../plugin.js?smoke=2');
 const home = await plugin.home();
+const categories = await plugin.categories(null);
+assert.deepEqual(categories.map((category) => category.id), ['destacados', 'catalogo-a', 'catalogo-b', 'series']);
+assert.ok(categories.every((category) => category.title && category.ref));
+
 assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
-assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.18 · Destacados'));
-assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.18 · Catálogo A–M'));
-assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.18 · Todas las series'));
+assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.19 · Destacados'));
+assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.19 · Catálogo A–M'));
+assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.19 · Todas las series'));
 assert.equal(home[0].items[0].title, 'Hero Donghua');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
 assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'hero');
