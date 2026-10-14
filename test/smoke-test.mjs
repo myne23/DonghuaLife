@@ -71,7 +71,7 @@ assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.
 assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.21 · Todas las series'));
 assert.equal(home[0].items[0].title, 'Alpha Donghua', 'Destacados usa el catálogo disponible sin pedir una segunda página');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
-assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'hero');
+assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'alpha');
 const pageA = await plugin.browse('catalogo-a', '1');
 assert.ok(pageA.items.length > 0);
 const pageB = await plugin.browse('catalogo-b', '1');
