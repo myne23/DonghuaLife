@@ -5,7 +5,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 ## Funciones
 
 - Buscar títulos por nombre.
-- Mostrar una fila de donghua en Inicio y abrir más resultados.
+- Mostrar varias filas de donghua en Inicio y abrir más resultados.
 - Leer la ficha pública de una serie y sus episodios.
 - Resolver enlaces directos que publique la página y probar el reproductor incrustado de OK.ru.
 - No requiere cuenta, configuración ni clave personal.
@@ -13,9 +13,12 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 
 ## Instalación en Kino
 
-1. Abre **Ajustes → Plugins**.
-2. Introduce `myne23/DonghuaLife`.
-3. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
+1. Si tenés instalada la versión anterior, desinstalá `DonghuaLife` para evitar que Kino conserve su identidad o caché.
+2. Abre **Ajustes → Plugins**.
+3. Introduce `myne23/DonghuaLife`.
+4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
+
+La versión 0.1.16 usa el identificador `donghualife-v2` para que Kino la trate como una instalación nueva. Las tarjetas de series usan el slug interno como referencia y no la URL completa de la web.
 
 ## Estado del desarrollo
 
