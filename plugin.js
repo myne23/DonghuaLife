@@ -256,7 +256,7 @@ export async function search(query) {
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
-  const headings = html.match(/<h[1-6]\\b[^>]*>[\\s\\S]*?<\\/h[1-6]>/gi) || [];
+  const headings = html.match(/<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>/gi) || [];
   let match = null;
   let offset = 0;
   for (const heading of headings) {
@@ -270,7 +270,7 @@ function sectionSlice(html, headingPattern, maxChars) {
   if (!match) return "";
   const start = match.index + match.length;
   const tail = html.slice(start, start + (maxChars || 60000));
-  const next = /<h[1-3]\\b[^>]*>/i.exec(tail);
+  const next = /<h[1-3]\b[^>]*>/i.exec(tail);
   return next ? tail.slice(0, next.index) : tail;
 }
 function parseHomeRows(homeHtml, latestHtml) {
