@@ -231,28 +231,35 @@ async function resolveOkru(embedUrl) {
   throw new Error("OK.ru no ofreció una fuente compatible");
 }
 
+function normalizeSearch(value) {
+  const text = String(value || "").toLowerCase();
+  return (typeof text.normalize === "function" ? text.normalize("NFD") : text)
+    .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 export async function search(query) {
   await null;
-  const term = String((typeof query === "string" ? query : query && (query.q || query.originalTitle)) || "").trim();
+  const term = String((typeof query === "string" ? query : query && (query.q || query.originalTitle || query.title)) || "").trim();
   if (!term) return [];
-  let items = [];
-  try { items = parseSeries(await getText(SERIES + "?search=" + encodeURIComponent(term))); }
-  catch (e) { log("Falló la búsqueda del sitio", e.message); }
-  const normalized = term.toLowerCase();
-  const matches = (item) => item.title.toLowerCase().includes(normalized) || item.ref.toLowerCase().includes(normalized);
-  items = unique(items.filter(matches));
-  if (!items.length) {
-    // Algunas versiones del sitio ignoran ?search=. Buscar también en el catálogo y en el
-    // inicio, pero no filtrar por el texto de los botones («Detalles»).
-    for (const url of [SERIES, BASE + "/", BASE + "/?page=1"]) {
-      try {
-        const fallback = parseSeries(await getText(url));
-        items = unique(items.concat(fallback.filter(matches)));
-      } catch (e) { log("No se pudo consultar el catálogo alternativo", e.message); }
-      if (items.length) break;
-    }
+  const wanted = normalizeSearch(term);
+  const words = wanted.split(/\\s+/).filter(Boolean);
+  const matches = (item) => {
+    const haystack = normalizeSearch(item.title + " " + item.id + " " + item.ref);
+    return haystack.includes(wanted) || words.length > 1 && words.every((word) => haystack.includes(word));
+  };
+  const collected = [];
+  // La búsqueda del sitio a veces devuelve resultados parciales o ignora el parámetro.
+  // Siempre comprobamos varias páginas del catálogo; no dejamos de buscar al hallar un solo resultado.
+  const urls = [SERIES + "?search=" + encodeURIComponent(term), SERIES, BASE + "/", BASE + "/ultimos-episodios"];
+  for (let page = 2; page <= 8; page++) urls.push(SERIES + "?page=" + page);
+  for (const url of urls) {
+    try {
+      const found = parseSeries(await getText(url));
+      collected.push(...found.filter(matches));
+      if (unique(collected).length >= MAX_PAGE) break;
+    } catch (e) { log("No se pudo consultar una página de búsqueda", e.message); }
   }
-  return items.slice(0, MAX_PAGE);
+  return unique(collected).slice(0, MAX_PAGE);
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
@@ -273,13 +280,48 @@ function sectionSlice(html, headingPattern, maxChars) {
   const next = /<h[1-3]\b[^>]*>/i.exec(tail);
   return next ? tail.slice(0, next.index) : tail;
 }
+function parseLatestSeries(html) {
+  const out = [];
+  const seen = new Set();
+  // La página de últimos episodios enlaza a /watch/, no siempre a la ficha /series/.
+  // El slug del episodio corresponde al de la serie antes de los dos números finales.
+  const re = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/watch\\/[^"']+)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;
+  let match;
+  while ((match = re.exec(html)) && out.length < MAX_PAGE) {
+    const url = absolute(match[2]);
+    let path = "";
+    try { path = new URL(url).pathname; } catch { continue; }
+    const m = /\\/watch\\/([a-z0-9-]+)-(\\d{1,3})-(\\d{1,4})\\/?$/i.exec(path);
+    if (!m) continue;
+    const slug = m[1];
+    if (seen.has(slug)) continue;
+    const around = html.slice(Math.max(0, match.index - 1800), Math.min(html.length, re.lastIndex + 1800));
+    const imgMatch = /<img\\b[^>]*>/i.exec(around);
+    const img = imgMatch ? imgMatch[0] : "";
+    const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
+    const label = attr(img, "alt") || attr(img, "title") || slug.replace(/-/g, " ");
+    out.push({ id: slug, ref: SERIES + "/" + slug, title: textOf(label).slice(0, 200), kind: "series",
+      poster: posterRaw ? absolute(posterRaw) : undefined, backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"] });
+    seen.add(slug);
+  }
+  return out;
+}
+
 function parseHomeRows(homeHtml, latestHtml) {
+  const allHome = unique(parseSeries(homeHtml));
   const featuredHtml = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
   const trendsHtml = sectionSlice(homeHtml, "tendencias", 45000);
-  const featured = unique(parseSeries(featuredHtml || homeHtml)).slice(0, MAX_HOME);
-  const latest = unique(parseSeries(latestHtml || "")).slice(0, MAX_HOME);
-  const trends = unique(parseSeries(trendsHtml || homeHtml))
-    .filter((x) => !featured.some((y) => y.ref === x.ref)).slice(0, MAX_HOME);
+  let featured = unique(parseSeries(featuredHtml));
+  // Si el HTML no conserva el encabezado de la sección, usar el catálogo de la portada
+  // para no terminar con una sola tarjeta en el banner.
+  if (featured.length < 3) featured = allHome;
+  featured = featured.slice(0, MAX_HOME);
+  let latest = unique(parseLatestSeries(latestHtml || ""));
+  if (!latest.length) latest = unique(parseLatestSeries(homeHtml));
+  latest = latest.filter((x) => !featured.some((y) => y.id === x.id)).slice(0, MAX_HOME);
+  let trends = unique(parseSeries(trendsHtml));
+  if (trends.length < 3) trends = allHome;
+  trends = trends.filter((x) => !featured.some((y) => y.id === x.id) && !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
   return [
     { id: "destacados", title: "Destacados", genre: "anime", items: featured },
     { id: "ultimos-episodios", title: "Últimos episodios", genre: "anime", items: latest },
