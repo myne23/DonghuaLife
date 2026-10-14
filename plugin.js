@@ -525,10 +525,11 @@ export async function home() {
 export async function section({ tab }) {
   const tabs = [
     { id: "inicio", label: "Inicio" },
-    { id: "destacados", label: "Destacados" },
-    { id: "catalogo-a", label: "Catálogo A–M" },
-    { id: "catalogo-b", label: "Catálogo N–Z" },
-    { id: "series", label: "Todas las series" }
+    { id: "ultimos-episodios", label: "Últimos Episodios" },
+    { id: "tendencias", label: "Tendencias" },
+    { id: "series-finalizadas", label: "Series Finalizadas" },
+    { id: "peliculas", label: "Películas" },
+    { id: "catalogo-az", label: "Catálogo completo A-Z" }
   ];
   const chosen = tabs.some((entry) => entry.id === tab) ? tab : "inicio";
   const rows = await home();
@@ -542,28 +543,47 @@ export async function section({ tab }) {
 // distintos de las filas home() que se agregan al Inicio global de Kino.
 export async function categories() {
   return [
-    { id: "destacados", title: "Destacados", ref: "destacados" },
-    { id: "catalogo-a", title: "Catálogo A–M", ref: "catalogo-a" },
-    { id: "catalogo-b", title: "Catálogo N–Z", ref: "catalogo-b" },
-    { id: "series", title: "Todas las series", ref: "series" }
+    { id: "ultimos-episodios", title: "Últimos Episodios", ref: "ultimos-episodios" },
+    { id: "tendencias", title: "Tendencias", ref: "tendencias" },
+    { id: "series-finalizadas", title: "Series Finalizadas", ref: "series-finalizadas" },
+    { id: "peliculas", title: "Películas", ref: "peliculas" },
+    { id: "catalogo-az", title: "Catálogo completo A-Z", ref: "catalogo-az" }
   ];
 }
 
 export async function browse(ref, cursor) {
   const page = cursor ? Number(cursor) : 1;
   if (!Number.isInteger(page) || page < 1 || page > 100) throw kino.error("not_found", "La página solicitada no existe");
-  if (ref === "destacados" || ref === "catalogo-a" || ref === "catalogo-b" || ref === "series") {
+
+  if (ref === "peliculas") {
+    const html = await getText(BASE + "/index.php/" + (page > 1 ? "?page=" + (page - 1) : ""));
+    const items = parseMovieItems(html);
+    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+  }
+
+  if (ref === "ultimos-episodios" || ref === "tendencias") {
+    const homeHtml = await getText(BASE + "/");
+    const catalogHtml = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
+    const catalog = unique(parseSeries(catalogHtml));
+    const sectionHtml = sectionSlice(homeHtml,
+      ref === "ultimos-episodios" ? "últimos? episodios" : "tendencias",
+      ref === "ultimos-episodios" ? 60000 : 45000);
+    const parsed = ref === "ultimos-episodios"
+      ? unique(parseLatestSeries(sectionHtml))
+      : unique(parseSeries(sectionHtml));
+    const items = mapToCatalog(parsed, catalog).slice(0, MAX_PAGE);
+    return { items, next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
+  }
+
+  if (ref === "series-finalizadas" || ref === "catalogo-az") {
     const html = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
     const catalog = unique(parseSeries(html));
-    if (ref === "series") return { items: catalog, next: catalog.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
-    if (ref === "destacados") {
-      const homeHtml = await getText(BASE + "/").catch(() => "");
-      const featured = unique(parseSeries(homeHtml));
-      return { items: (featured.length >= 3 ? featured : catalog).slice(0, MAX_PAGE) };
-    }
-    const split = splitCatalog(html);
-    return { items: (ref === "catalogo-a" ? split.first : split.second).slice(0, MAX_PAGE) };
+    const items = ref === "series-finalizadas"
+      ? parseFinishedSeries(html)
+      : catalog.slice().sort((a, b) => normalizeSearch(a.title).localeCompare(normalizeSearch(b.title)));
+    return { items: items.slice(0, MAX_PAGE), next: items.length === MAX_PAGE && page < 100 ? String(page + 1) : undefined };
   }
+
   throw kino.error("not_found", "La categoría solicitada no existe");
 }
 
@@ -575,15 +595,23 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
-  info.title = "PRUEBA 0.1.22 · " + info.title;
   return { series: info, episodes: list };
 }
 
 export async function resolve(ref) {
   const path = String(ref || "");
-  const url = absolute(path.startsWith("/") ? path : "/" + path);
-  if (!url || !/^https:\/\/donghualife\.com\/watch\//i.test(url)) throw kino.error("not_found", "El episodio no es válido");
-  const html = await getText(url);
+  let url = absolute(path.startsWith("/") ? path : "/" + path);
+  if (!url || !/^https:\/\/donghualife\.com\/(?:watch|movie|movies|pelicula|peliculas)\//i.test(url)) {
+    throw kino.error("not_found", "El episodio o película no es válido");
+  }
+  let html = await getText(url);
+  if (!/\/watch\//i.test(url)) {
+    const watch = /href\\s*=\\s*(["'])([^"']*\\/watch\\/[^"']+)\\1/i.exec(html);
+    if (watch) {
+      url = absolute(watch[2], url);
+      html = await getText(url);
+    }
+  }
   if (/solo\s+para\s+vip|requiere\s+(?:una\s+)?suscripci[oó]n|inicia\s+sesi[oó]n\s+para\s+ver/i.test(textOf(html))) {
     throw kino.error("unavailable", "Este episodio requiere acceso en el sitio");
   }
