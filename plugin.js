@@ -159,7 +159,10 @@ function parseEpisodes(html, pageUrl) {
     if (season < 1 || number < 1) continue;
     let label = textOf(match[3]);
     label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
+    label = label.replace(/(cap[ií]tulo\s*\d+)\s*\1/gi, "$1").replace(/(episodio\s*\d+)\s*\1/gi, "$1");
+    // Si el HTML repite el nombre del capítulo en varias etiquetas, no mostrarlo dos veces.
     if (!label || /^(?:cap[ií]tulo\s*)?\d+$/i.test(label) || label.length > 100) label = "Capítulo " + number;
+    else if (/^(?:\d+\s*)?(?:cap[ií]tulo|episodio)\s*\d+$/i.test(label)) label = "Capítulo " + number;
     else if (!/cap[ií]tulo|episodio/i.test(label)) label = "Capítulo " + number + " · " + label;
     out.push({ season, number, ref: path, title: label.slice(0, 180) });
     seen.add(path);
