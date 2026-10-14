@@ -390,45 +390,6 @@ function parseLatestSeries(html) {
   }
   return out;
 }
-function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
-  const allHome = unique(parseSeries(homeHtml));
-  const allCatalog = unique(parseSeries(catalogHtml || ""));
-  const allAvailable = unique(allCatalog.concat(allHome));
-
-  // Extraer cada carrusel por su encabezado real. sectionSlice ignora los h3 de las
-  // tarjetas, que antes podían truncar cada sección después del primer elemento.
-  const latestSection = sectionSlice(homeHtml, "últimos episodios", 60000);
-  const vipSection = sectionSlice(homeHtml, "estrenos vip", 60000);
-  const featuredSection = sectionSlice(homeHtml, "(?:te recomendamos para vos|recomendados|destacados)", 65000);
-  const trendsSection = sectionSlice(homeHtml, "tendencias", 45000);
-
-  let featured = unique(parseSeries(featuredSection));
-  if (featured.length < 3) featured = allHome.slice(0, 10);
-  featured = featured.slice(0, MAX_HOME);
-
-  // Priorizar los episodios visibles en Inicio; la página separada queda como respaldo.
-  let latest = unique(parseLatestSeries(latestSection));
-  if (latest.length < 3) latest = unique(latest.concat(parseLatestSeries(latestHtml || "")));
-  if (!latest.length) latest = unique(parseLatestSeries(homeHtml));
-  latest = latest.filter((x) => !featured.some((y) => y.id === x.id)).slice(0, MAX_HOME);
-
-  let vip = unique(parseLatestSeries(vipSection));
-  vip = vip.filter((x) => !featured.some((y) => y.id === x.id) &&
-    !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
-
-  let trends = unique(parseSeries(trendsSection));
-  if (trends.length < 3) trends = allAvailable;
-  trends = trends.filter((x) => !featured.some((y) => y.id === x.id) &&
-    !latest.some((y) => y.id === x.id) && !vip.some((y) => y.id === x.id)).slice(0, MAX_HOME);
-
-  return [
-    { id: "destacados", ref: "destacados", title: "DL 0.1.17 · Recomendados para vos", items: featured },
-    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "DL 0.1.17 · Últimos episodios", items: latest },
-    { id: "estrenos-vip", ref: "estrenos-vip", title: "DL 0.1.17 · Estrenos VIP", items: vip },
-    { id: "tendencias", ref: "tendencias", title: "DL 0.1.17 · Tendencias", items: trends },
-    { id: "series", ref: "series", title: "DL 0.1.17 · Todas las series", items: allCatalog.slice(0, MAX_HOME) }
-  ].filter((row) => row.items.length);
-}
 function splitCatalog(catalogHtml) {
   const items = unique(parseSeries(catalogHtml)).slice().sort((a, b) =>
     normalizeSearch(a.title).localeCompare(normalizeSearch(b.title))
@@ -453,13 +414,15 @@ function parseMovieItems(html) {
   const section = sectionSlice(source, "(?:pel[ií]culas|pelis\\s+donghuas|donghua\\s+movies)", 70000) || source;
   const out = [];
   const seen = new Set();
-  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/(?:movie|movies|pelicula|peliculas|pel[ií]cula|pel[ií]culas)\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   while ((match = re.exec(section)) && out.length < MAX_PAGE) {
     const url = absolute(match[2]);
     let path = "";
     try { path = new URL(url).pathname; } catch { continue; }
-    if (seen.has(path)) continue;
+    const segments = path.split("/").filter(Boolean);
+    if (seen.has(path) || segments.length < 2 || /\/(?:series|watch)\//i.test(path) ||
+        /\/(?:peliculas?|movies?|index\.php)\/?$/i.test(path)) continue;
     const imgMatch = /<img\b[^>]*>/i.exec(match[3]);
     const img = imgMatch ? imgMatch[0] : "";
     const title = attr(img, "alt") || attr(img, "title") || textOf(match[3]);
@@ -494,7 +457,7 @@ export async function home() {
   let moviesHtml = "";
   try { homeHtml = await getText(BASE + "/", { fast: true }); }
   catch (e) { log("No se pudo cargar el Inicio del sitio", e.message); }
-  try { catalogHtml = await getText(SERIES, { fast: true }); }
+  try { catalogHtml = await getText(SERIES + "?sort=az", { fast: true }); }
   catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
   try { moviesHtml = await getText(BASE + "/index.php/", { fast: true }); }
   catch (e) { log("No se pudo cargar la sección de películas", e.message); }
@@ -576,7 +539,7 @@ export async function browse(ref, cursor) {
   }
 
   if (ref === "series-finalizadas" || ref === "catalogo-az") {
-    const html = await getText(SERIES + (page > 1 ? "?page=" + page : ""));
+    const html = await getText(SERIES + "?sort=az" + (page > 1 ? "&page=" + page : ""));
     const catalog = unique(parseSeries(html));
     const items = ref === "series-finalizadas"
       ? parseFinishedSeries(html)
@@ -601,7 +564,7 @@ export async function episodes(ref) {
 export async function resolve(ref) {
   const path = String(ref || "");
   let url = absolute(path.startsWith("/") ? path : "/" + path);
-  if (!url || !/^https:\/\/donghualife\.com\/(?:watch|movie|movies|pelicula|peliculas)\//i.test(url)) {
+  if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
     throw kino.error("not_found", "El episodio o película no es válido");
   }
   let html = await getText(url);
