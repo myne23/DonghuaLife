@@ -401,11 +401,12 @@ function splitCatalog(catalogHtml) {
 
 function parseFinishedSeries(html) {
   const source = String(html || "");
+  const lowerSource = source.toLowerCase();
   return unique(parseSeries(source)).filter((item) => {
-    const needle = "/series/" + item.ref;
+    const needle = ("/series/" + item.ref).toLowerCase();
     let searchFrom = 0;
-    while (searchFrom < source.length) {
-      const at = source.indexOf(needle, searchFrom);
+    while (searchFrom < lowerSource.length) {
+      const at = lowerSource.indexOf(needle, searchFrom);
       if (at < 0) return false;
       searchFrom = at + needle.length;
       const cardStart = source.lastIndexOf("<article", at);
