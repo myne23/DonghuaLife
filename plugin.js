@@ -316,14 +316,16 @@ function parseSourceCandidates(html, pageUrl) {
 }
 
 function parseEmbed(html, pageUrl) {
-  const re = /<(?:iframe|video|source)\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*(["'])([^"']+)\1[^>]*>/gi;
+  const candidates = parseSourceCandidates(html, pageUrl);
+  const direct = candidates.find((item) => item.provider === "direct" || item.provider === "r2");
+  if (direct) return direct.url;
+  const re = /<(?:iframe|video|source)\\b[^>]*(?:src|data-src|data-lazy-src)\\s*=\\s*(["'])([^"']+)\\1[^>]*>/gi;
   let match;
-  while ((match = re.exec(html))) {
+  while ((match = re.exec(normalizePlayerMarkup(html)))) {
     const url = absolute(match[2], pageUrl);
-    if (url && (/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url) || /(^|\/\/)([^/]+\.)?ok\.ru\/(?:video|videoembed)\//i.test(url))) return url;
+    if (url && providerForUrl(url)) return url;
   }
-  const raw = /(?:src|file|url)\s*[:=]\s*["']((?:https?:)?\/\/[^"']*(?:ok\.ru|\.m3u8|\.mp4|\.webm)[^"']*)["']/i.exec(html);
-  return raw ? absolute(raw[1], pageUrl) : "";
+  return candidates[0] ? candidates[0].url : "";
 }
 
 function parsePlayerOptions(html) {
