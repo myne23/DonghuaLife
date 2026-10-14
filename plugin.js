@@ -1299,6 +1299,42 @@ function capturedStream(capture) {
   if (!result.subtitles.length) delete result.subtitles;
   return result;
 }
+async function resolveRenderedDailymotionPage(url) {
+  if (!kino.browser || typeof kino.browser.page !== "function") return null;
+  try {
+    // La captura de red puede recoger callbacks de anuncios de Dailymotion en vez
+    // del manifiesto. Leemos el DOM tras ejecutar los scripts y buscamos el ID del embed.
+    const page = await kino.browser.page(url, {
+      timeoutMs: 5500,
+      waitFor: /dailymotion\.com\/(?:embed\/video|video\/)|<iframe[^>]+(?:dailymotion|dmcdn)/i
+    });
+    const html = String(page && page.html || "");
+    log("Página del reproductor procesada", "status:", page && page.status, "html:", html.length);
+    const embed = parseEmbed(html, page && page.finalUrl || url);
+    if (embed && /(?:dailymotion\.com|dai\.ly)/i.test(embed) && !isDirectMediaUrl(embed)) {
+      const stream = await resolveProviderUrl(embed, page.finalUrl || url, false);
+      if (stream) {
+        log("Reproductor Dailymotion resuelto desde el DOM");
+        return stream;
+      }
+    }
+    // Algunos reproductores guardan el iframe en JSON o en atributos no estándar.
+    const candidates = extractSourceCandidates(html, page && page.finalUrl || url);
+    for (const candidate of candidates) {
+      if (!/(?:dailymotion\.com|dai\.ly)/i.test(candidate) || isDirectMediaUrl(candidate)) continue;
+      const stream = await resolveProviderUrl(candidate, page.finalUrl || url, false);
+      if (stream) {
+        log("Reproductor Dailymotion resuelto desde candidatos del DOM");
+        return stream;
+      }
+    }
+    log("La página procesada no expuso un embed Dailymotion resoluble");
+  } catch (error) {
+    log("No se pudo leer el DOM del reproductor", String(error && error.message || error).slice(0, 120));
+  }
+  return null;
+}
+
 async function capturePageStream(url) {
   if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   try {
@@ -1431,8 +1467,12 @@ export async function resolve(ref) {
     if (stream) return addSourceAlternatives(stream, candidates, candidate);
   }
 
-  // Último recurso: capturar el reproductor general solo cuando no se pudieron resolver
-  // las fuentes encontradas por proveedor.
+  // Primero leemos el DOM ya ejecutado: Dailymotion puede exponer el ID del video
+  // en un iframe dinámico, mientras que la captura de red también incluye VMAP/anuncios.
+  const rendered = await resolveRenderedDailymotionPage(url);
+  if (rendered) return rendered;
+
+  // Último recurso: captura de solicitudes del reproductor si el DOM no permite resolverlo.
   const captured = await capturePageStream(url);
   if (captured) return addSourceAlternatives(captured, candidates, "");
   if (!candidates.length && !embed) throw kino.error("unavailable", "La página no mostró fuentes públicas de reproducción reconocibles");
