@@ -20,6 +20,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Comparar acceso a dominio principal y beta
+        run: |
+          for host in donghualife.com beta.donghualife.com; do
+            for path in / /series /series/against-sky-supreme; do
+              printf '%s%s -> ' "https://$host" "$path"
+              curl -L -sS -o /tmp/donghua-page -w '%{http_code} (%{size_download} bytes)\n' --max-time 20 "https://$host$path" || true
+            done
+          done
       - name: Validar contrato y manifiesto
         run: node kino-sdk/sdk/validate.mjs .
       - name: Probar Inicio con datos reales
