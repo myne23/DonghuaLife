@@ -23,7 +23,8 @@
     "vkuser.net",
     "*.vkuser.net",
     "cdnvideo.ru",
-    "*.cdnvideo.ru"
+    "*.cdnvideo.ru",
+    "beta.donghualife.com"
   ],
   "capabilities": [
     "search",
