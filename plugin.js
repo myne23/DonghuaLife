@@ -1216,7 +1216,7 @@ export async function resolve(ref) {
   if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
     // Las referencias internas de servidor se resuelven solo dentro de la ficha de episodio.
     if (path.startsWith("source:")) {
-      const sourceUrl = absolute(path.slice(7));
+      const sourceUrl = String(path.slice(7));
       if (!sourceUrl || !/^https:\/\//i.test(sourceUrl) || !sourceHostAllowed(sourceUrl)) {
         throw kino.error("not_found", "El servidor de video no es válido");
       }
