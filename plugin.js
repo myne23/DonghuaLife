@@ -1002,9 +1002,8 @@ export async function episodes(ref) {
     });
   }
 
-  const selectedEpisodes = selectedSeason
-    ? regularEpisodes.filter((episode) => episode.season === selectedSeason)
-    : regularEpisodes;
+  const effectiveSeason = selectedSeason || seasonNumbers[0] || 1;
+  const selectedEpisodes = regularEpisodes.filter((episode) => episode.season === effectiveSeason);
   if (selectedSeason && !selectedEpisodes.length) {
     throw kino.error("not_found", "No se encontraron episodios para la temporada " + selectedSeason);
   }
