@@ -277,7 +277,9 @@ function parseEmbed(html, pageUrl) {
   let match;
   while ((match = re.exec(html))) {
     const url = absolute(match[2], pageUrl);
-    if (url && (/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url) || /(^|\/\/)([^/]+\.)?ok\.ru\/(?:video|videoembed)\//i.test(url))) return url;
+    if (url && (/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url) ||
+      /(^|\/\/)([^/]+\.)?ok\.ru\/(?:video|videoembed)\//i.test(url) ||
+      /(^|\/\/)([^/]+\.)?(?:dailymotion\.com|dai\.ly)\/(?:embed\/video|video)\//i.test(url))) return url;
   }
   const raw = /(?:src|file|url)\s*[:=]\s*["']((?:https?:)?\/\/[^"']*(?:ok\.ru|\.m3u8|\.mp4|\.webm)[^"']*)["']/i.exec(html);
   return raw ? absolute(raw[1], pageUrl) : "";
@@ -1106,7 +1108,16 @@ function directStream(url) {
   const mime = /\.m3u8$/i.test(path) ? "application/vnd.apple.mpegurl" :
     /\.webm$/i.test(path) ? "video/webm" : "video/mp4";
   const kind = mime === "application/vnd.apple.mpegurl" ? "HLS" : mime === "video/webm" ? "WEBM" : "MP4";
-  return { url, mime, label: (sourceLabel(url) + " · " + kind).slice(0, 48) };
+  const result = { url, mime, label: (sourceLabel(url) + " · " + kind).slice(0, 48) };
+  // Dailymotion suele servir el manifiesto desde un subdominio CDN distinto del iframe.
+  // Conservamos un Referer de proveedor para evitar respuestas HTML de anti-hotlink en HLS.
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (/(^|\.)dailymotion\.com$/.test(host)) {
+      result.headers = { Referer: "https://www.dailymotion.com/", Origin: "https://www.dailymotion.com" };
+    }
+  } catch {}
+  return result;
 }
 
 function mediaUrlsInObject(value, out, depth) {
@@ -1331,6 +1342,10 @@ export async function resolve(ref) {
     if (/ok\.ru\/(?:video|videoembed)\//i.test(embed)) {
       try { return await resolveOkru(embed); }
       catch (error) { log("No se pudo resolver OK.ru", error && error.message || String(error)); }
+    }
+    if (/dailymotion\.com|dai\.ly/i.test(embed)) {
+      const providerStream = await resolveProviderUrl(embed, url, false);
+      if (providerStream) return providerStream;
     }
   }
 
