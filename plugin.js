@@ -311,7 +311,6 @@ function parseLatestSeries(html) {
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
 
     const seriesLink = /href\s*=\s*(["'])([^"']*\/series\/[^"']+)\1/i.exec(around);
-    let slug = seriesLink ? slugFromUrl(absolute(seriesLink[2])) : "";
     let title = attr(img, "alt") || attr(img, "title") || "";
     if (!title) {
       const titleAttr = /(?:data-title|aria-label)\s*=\s*(["'])(.*?)\1/i.exec(match[0]);
@@ -330,7 +329,10 @@ function parseLatestSeries(html) {
       if (heading) title = textOf(heading[1]);
     }
     title = textOf(title).replace(/^recomendado\s+/i, "").trim();
-    if (!slug && title) slug = normalizeSearch(title).replace(/\s+/g, "-");
+    // El texto de la tarjeta tiene prioridad: el bloque vecino puede contener enlaces
+    // a otras series y no debemos asignar por accidente la ficha de otra tarjeta.
+    let slug = title ? normalizeSearch(title).replace(/\s+/g, "-") : "";
+    if (!slug && seriesLink) slug = slugFromUrl(absolute(seriesLink[2]));
     if (!slug || !title) continue;
     if (seen.has(slug)) continue;
     out.push({
