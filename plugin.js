@@ -434,36 +434,90 @@ function splitCatalog(catalogHtml) {
     normalizeSearch(a.title).localeCompare(normalizeSearch(b.title))
   );
   if (items.length < 2) return { first: items, second: [] };
-  // La mitad alfabética de un catálogo real puede quedar vacía; dividir por orden
-  // de título garantiza dos carruseles útiles incluso si el sitio concentra sus títulos.
   const middle = Math.ceil(items.length / 2);
   return { first: items.slice(0, middle), second: items.slice(middle) };
 }
 
+function parseFinishedSeries(html) {
+  const source = String(html || "");
+  return unique(parseSeries(source)).filter((item) => {
+    const at = source.indexOf(item.ref);
+    if (at < 0) return false;
+    const nearby = source.slice(Math.max(0, at - 900), Math.min(source.length, at + 1800));
+    return /finalizad[oa]|completad[oa]|terminad[oa]/i.test(textOf(nearby));
+  });
+}
+
+function parseMovieItems(html) {
+  const source = String(html || "");
+  const section = sectionSlice(source, "(?:pel[ií]culas|pelis\\s+donghuas|donghua\\s+movies)", 70000) || source;
+  const out = [];
+  const seen = new Set();
+  const re = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/(?:movie|movies|pelicula|peliculas|pel[ií]cula|pel[ií]culas)\\/[^"']+)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;
+  let match;
+  while ((match = re.exec(section)) && out.length < MAX_PAGE) {
+    const url = absolute(match[2]);
+    let path = "";
+    try { path = new URL(url).pathname; } catch { continue; }
+    if (seen.has(path)) continue;
+    const imgMatch = /<img\\b[^>]*>/i.exec(match[3]);
+    const img = imgMatch ? imgMatch[0] : "";
+    const title = attr(img, "alt") || attr(img, "title") || textOf(match[3]);
+    if (!title || /^(ver ahora|detalles|play)$/i.test(title)) continue;
+    const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
+    const slug = path.split("/").filter(Boolean).pop();
+    out.push({ id: slug, ref: path, title: title.slice(0, 200), kind: "movie",
+      poster: posterRaw ? absolute(posterRaw) : undefined,
+      backdrop: posterRaw ? absolute(posterRaw) : undefined });
+    seen.add(path);
+  }
+  return out;
+}
+
+function mapToCatalog(parsed, catalog) {
+  const normalized = catalog.map((item) => ({ item, title: normalizeSearch(item.title) }));
+  const result = [];
+  for (const candidate of parsed) {
+    const title = normalizeSearch(candidate.title);
+    const found = normalized.find((entry) => entry.title === title ||
+      (title.length > 5 && entry.title.includes(title)) ||
+      (entry.title.length > 5 && title.includes(entry.title)));
+    const item = found ? found.item : candidate;
+    if (!result.some((prior) => prior.ref === item.ref)) result.push(item);
+  }
+  return result;
+}
+
 export async function home() {
-  // El Inicio general puede tener menos tiempo para cargar que la sección del plugin.
-  // Consultamos solo el catálogo y usamos un único intento por host. No asignamos genre
-  // a estas filas: es opcional y se usa para agrupar Categorías/En vivo, no para etiquetar
-  // cada fila del Inicio; el plugin de referencia de Kino también deja este campo fuera.
+  let homeHtml = "";
   let catalogHtml = "";
+  let moviesHtml = "";
+  try { homeHtml = await getText(BASE + "/", { fast: true }); }
+  catch (e) { log("No se pudo cargar el Inicio del sitio", e.message); }
   try { catalogHtml = await getText(SERIES, { fast: true }); }
   catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
+  try { moviesHtml = await getText(BASE + "/index.php/", { fast: true }); }
+  catch (e) { log("No se pudo cargar la sección de películas", e.message); }
 
-  const catalog = unique(parseSeries(catalogHtml)).slice(0, MAX_PAGE);
-  const featured = catalog.slice(0, MAX_HOME);
-  const split = splitCatalog(catalogHtml);
-  const rows = [
-    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.22 · Destacados", items: featured },
-    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.22 · Catálogo A–M", items: split.first.slice(0, MAX_HOME) },
-    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.22 · Catálogo N–Z", items: split.second.slice(0, MAX_HOME) },
-    { id: "series", ref: "series", title: "PRUEBA 0.1.22 · Todas las series", items: catalog.slice(0, MAX_HOME) }
+  const catalog = unique(parseSeries(catalogHtml));
+  const latestSection = sectionSlice(homeHtml, "últimos? episodios", 60000);
+  const trendsSection = sectionSlice(homeHtml, "tendencias", 45000);
+  let latest = mapToCatalog(unique(parseLatestSeries(latestSection)), catalog).slice(0, MAX_HOME);
+  if (!latest.length) latest = mapToCatalog(unique(parseSeries(latestSection)), catalog).slice(0, MAX_HOME);
+  const trends = mapToCatalog(unique(parseSeries(trendsSection)), catalog).slice(0, MAX_HOME);
+  const finished = parseFinishedSeries(catalogHtml).slice(0, MAX_HOME);
+  const movies = parseMovieItems(moviesHtml).slice(0, MAX_HOME);
+  const alphabetic = catalog.slice().sort((a, b) =>
+    normalizeSearch(a.title).localeCompare(normalizeSearch(b.title))
+  ).slice(0, MAX_HOME);
+
+  return [
+    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos Episodios", items: latest },
+    { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends },
+    { id: "series-finalizadas", ref: "series-finalizadas", title: "Series Finalizadas", items: finished },
+    { id: "peliculas", ref: "peliculas", title: "Películas", items: movies },
+    { id: "catalogo-az", ref: "catalogo-az", title: "Catálogo completo A-Z", items: alphabetic }
   ].filter((row) => row.items.length > 0);
-  if (rows.length > 1) return rows;
-
-  // Si el parser no encuentra fichas, devolver un error explícito es más útil que
-  // presentar un falso Home con una única categoría vacía.
-  log("Home de diagnóstico: no se pudieron extraer suficientes fichas del catálogo");
-  return rows;
 }
 
 // Sección propia de Kino: aparece como una entrada separada en Inicio
