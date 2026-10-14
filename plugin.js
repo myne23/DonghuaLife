@@ -472,6 +472,7 @@ function browseCursor(cursor) {
         page: parsed.page,
         previous: String(parsed.previous || ""),
         pageSize: Number.isInteger(parsed.pageSize) && parsed.pageSize > 0 ? parsed.pageSize : 0,
+        consumed: Number.isInteger(parsed.consumed) && parsed.consumed >= 0 ? parsed.consumed : 0,
         seen: Array.isArray(parsed.seen) ? parsed.seen.filter((value) => typeof value === "string").slice(0, 200) : []
       };
     }
@@ -659,42 +660,48 @@ export async function browse(ref, cursor) {
     const isHomeRow = ref === "peliculas-home";
     const seen = new Set(cursorState.seen || []);
     let sourcePage = page;
-    let pageSize = cursorState.pageSize || 0;
+    // Entregamos lotes pequeños y estables. Algunas respuestas del sitio contienen
+    // más títulos que los que Kino muestra por pantalla; si los devolvemos todos de
+    // una vez, Kino no ofrece «Ver más» aunque el catálogo tenga 40 películas.
+    const pageSize = cursorState.pageSize || 20;
+    let consumed = cursorState.consumed || 0;
     if (isHomeRow && page === 1 && seen.size === 0) {
       const firstHtml = await getText(BASE + "/peliculas");
       const firstMovies = parseMovieItems(firstHtml);
-      pageSize = firstMovies.length;
-      firstMovies.slice(0, MAX_HOME).forEach((item) => seen.add(cursorKey(item.ref)));
+      const homeItems = firstMovies.slice(0, MAX_HOME);
+      homeItems.forEach((item) => seen.add(cursorKey(item.ref)));
+      consumed += homeItems.length;
       sourcePage = 2;
     }
     let sourceHtml = "";
     let totalCount = 0;
     const items = [];
-    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_PAGE; checked++, sourcePage++) {
+    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < pageSize; checked++, sourcePage++) {
       const fetchedPage = sourcePage;
       const url = BASE + "/peliculas" + (fetchedPage > 1 ? "?page=" + fetchedPage : "");
       sourceHtml = await getText(url);
       totalCount = movieTotalCount(sourceHtml);
       const parsed = parseMovieItems(sourceHtml);
       if (!parsed.length) break;
-      if (!pageSize) pageSize = parsed.length;
       for (const item of parsed) {
         if (seen.has(cursorKey(item.ref)) || items.some((prior) => prior.ref === item.ref)) continue;
         items.push(item);
-        seen.add(cursorKey(item.ref));
       }
       if (items.length || !hasNextPage(sourceHtml, fetchedPage)) break;
     }
     if (!items.length) return { items: [] };
-    // Algunos HTML del catálogo no exponen el enlace «Siguiente» al parser, pero sí
-    // informan el total de películas. Usamos ese total como respaldo para el cursor.
-    const hasMoreByCount = totalCount > 0 && pageSize > 0 && sourcePage * pageSize < totalCount;
+    const resultItems = items.slice(0, pageSize);
+    resultItems.forEach((item) => seen.add(cursorKey(item.ref)));
+    const nextConsumed = consumed + resultItems.length;
+    // No dependemos solamente del enlace «Siguiente»: el sitio a veces entrega
+    // HTML sin el control de paginación o una lista más larga que el lote visible.
+    const hasMoreByCount = totalCount > 0 && nextConsumed < totalCount;
     const hasMoreByLink = hasNextPage(sourceHtml, sourcePage);
     const nextPage = sourcePage + 1;
     return {
-      items: items.slice(0, MAX_PAGE),
+      items: resultItems,
       next: nextPage <= 100 && (hasMoreByLink || hasMoreByCount)
-        ? JSON.stringify({ page: nextPage, pageSize, seen: Array.from(seen).slice(-30) })
+        ? JSON.stringify({ page: nextPage, pageSize, consumed: nextConsumed, seen: Array.from(seen).slice(-30) })
         : undefined
     };
   }
