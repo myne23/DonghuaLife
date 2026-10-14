@@ -165,10 +165,7 @@ assert.equal(captured.url,'https://cdn.example.test/playlist.m3u8','La captura d
 assert.equal(captured.mime,'application/vnd.apple.mpegurl');
 assert.equal(captured.label,'cdn.example.test · HLS','Debe identificar la fuente activa en el menú Servidor de Kino');
 assert.equal(captured.headers['User-Agent'],'KinoTest','Debe conservar los headers capturados');
-assert.equal(captured.alternatives.length,1,'Debe conservar el MP4 capturado como alternativa al HLS');
-assert.equal(captured.alternatives[0].url,'https://cdn.example.test/low.mp4');
-assert.equal(captured.alternatives[0].mime,'video/mp4');
-assert.equal(captured.alternatives[0].label,'cdn.example.test · MP4');
+assert.equal(captured.alternatives,undefined,'No debe ofrecer un MP4 fijo del mismo host como alternativa al HLS adaptativo');
 assert.deepEqual(captured.subtitles,[{lang:'es',url:'https://cdn.example.test/es.vtt',format:'vtt'}]);
 
 delete globalThis.kino.browser;
