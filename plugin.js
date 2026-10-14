@@ -1236,8 +1236,6 @@ function capturedStream(capture) {
     return "";
   };
   const rank = (item) => mediaType(item) === "hls" ? 0 : mediaType(item) === "mp4" ? 1 : mediaType(item) === "webm" ? 2 : 3;
-  // La captura también puede contener segmentos, imágenes o solicitudes auxiliares.
-  // Solo tratamos como fuentes alternativas manifiestos HLS y archivos de video.
   const candidates = media.filter((item) => item && /^https:\/\//i.test(String(item.url || "")) && mediaType(item))
     .sort((a, b) => rank(a) - rank(b));
   const stream = candidates[0];
@@ -1246,38 +1244,39 @@ function capturedStream(capture) {
     const type = mediaType(item);
     return type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4";
   };
+  const playbackHeaders = (item, host) => {
+    const headers = item && item.headers && typeof item.headers === "object" ? { ...item.headers } : {};
+    if (/(^|\.)dailymotion\.com$/i.test(host)) {
+      if (!Object.keys(headers).some((key) => key.toLowerCase() === "referer")) headers.Referer = "https://www.dailymotion.com/";
+      if (!Object.keys(headers).some((key) => key.toLowerCase() === "origin")) headers.Origin = "https://www.dailymotion.com";
+    }
+    return headers;
+  };
   const url = String(stream.url);
+  let host = "";
+  try { host = new URL(url).hostname.toLowerCase(); } catch {}
   const result = { url, mime: mimeFor(stream), label: (sourceLabel(url) + " · " + mediaType(stream).toUpperCase()).slice(0, 48) };
-  if (stream.headers && typeof stream.headers === "object") result.headers = stream.headers;
-  else {
-    try {
-      const host = new URL(url).hostname.toLowerCase();
-      if (/(^|\\.)dailymotion\\.com$/.test(host)) {
-        result.headers = { Referer: "https://www.dailymotion.com/", Origin: "https://www.dailymotion.com" };
-      }
-    } catch {}
-  }
+  const headers = playbackHeaders(stream, host);
+  if (Object.keys(headers).length) result.headers = headers;
 
   const seen = new Set([url]);
   const alternatives = [];
-  let primaryHost = "";
-  try { primaryHost = new URL(url).hostname.toLowerCase(); } catch {}
+  let primaryHost = host;
   for (const item of candidates.slice(1)) {
     const alternateUrl = String(item.url);
     if (seen.has(alternateUrl) || alternatives.length >= 8) continue;
-    // Un HLS adaptativo ya contiene sus propias calidades. Evitamos mostrar
-    // como servidor separado el MP4/WebM fijo del mismo host.
     let alternateHost = "";
     try { alternateHost = new URL(alternateUrl).hostname.toLowerCase(); } catch {}
     if (mediaType(stream) === "hls" && alternateHost === primaryHost &&
         (mediaType(item) === "mp4" || mediaType(item) === "webm")) continue;
     seen.add(alternateUrl);
     const kind = mediaType(item).toUpperCase();
+    const alternateHeaders = playbackHeaders(item, alternateHost);
     alternatives.push({
-      label: sourceLabel(alternateUrl) + " · " + kind,
+      label: (sourceLabel(alternateUrl) + " · " + kind).slice(0, 48),
       url: alternateUrl,
       mime: mimeFor(item),
-      ...(item.headers && typeof item.headers === "object" ? { headers: item.headers } : {})
+      ...(Object.keys(alternateHeaders).length ? { headers: alternateHeaders } : {})
     });
   }
   if (alternatives.length) result.alternatives = alternatives;
@@ -1292,7 +1291,6 @@ function capturedStream(capture) {
   if (!result.subtitles.length) delete result.subtitles;
   return result;
 }
-
 async function capturePageStream(url) {
   if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   try {
