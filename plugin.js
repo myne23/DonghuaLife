@@ -21,17 +21,23 @@ async function getText(url, options) {
     const fallback = "https://beta.donghualife.com" + String(url).slice(BASE.length);
     if (fallback !== String(url)) urls.push(fallback);
   }
+  const fast = Boolean(options && options.fast);
+  const requestOptions = { ...(options || {}) };
+  delete requestOptions.fast;
   const headers = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
     "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
     ...(options && options.headers ? options.headers : {})
   };
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Home can have a shorter UI deadline than opening the dedicated plugin section.
+  // Its fast mode tries the primary host and the beta fallback once each, without
+  // three rounds of retries that can leave the global Home without plugin rows.
+  for (let attempt = 0; attempt < (fast ? 1 : 3); attempt++) {
     for (const candidate of urls) {
       let response;
       try {
-        response = await kino.fetch(candidate, { ...(options || {}), headers });
+        response = await kino.fetch(candidate, { ...requestOptions, headers });
       } catch (error) {
         lastError = error;
         continue;
@@ -435,24 +441,21 @@ function splitCatalog(catalogHtml) {
 }
 
 export async function home() {
-  // 0.1.18 evita depender de los encabezados del HTML para crear el Home:
-  // siempre parte del catálogo estable y construye filas con refs de browse válidas.
+  // El Inicio general puede tener menos tiempo para cargar que la sección del plugin.
+  // Consultamos solo el catálogo y usamos un único intento por host: no esperamos
+  // además una segunda página (la portada) ni rondas largas de reintentos.
   let catalogHtml = "";
-  let homeHtml = "";
-  try { catalogHtml = await getText(SERIES); }
-  catch (e) { log("No se pudo cargar el catálogo principal", e.message); }
-  try { homeHtml = await getText(BASE + "/"); }
-  catch (e) { log("No se pudo cargar la portada; se usará el catálogo", e.message); }
+  try { catalogHtml = await getText(SERIES, { fast: true }); }
+  catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
 
-  const catalog = unique(parseSeries(catalogHtml || homeHtml)).slice(0, MAX_PAGE);
-  const homeItems = unique(parseSeries(homeHtml));
-  const featured = (homeItems.length >= 3 ? homeItems : catalog).slice(0, MAX_HOME);
-  const split = splitCatalog(catalogHtml || homeHtml);
+  const catalog = unique(parseSeries(catalogHtml)).slice(0, MAX_PAGE);
+  const featured = catalog.slice(0, MAX_HOME);
+  const split = splitCatalog(catalogHtml);
   const rows = [
-    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.20 · Destacados", genre: "anime", items: featured },
-    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.20 · Catálogo A–M", genre: "anime", items: split.first.slice(0, MAX_HOME) },
-    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.20 · Catálogo N–Z", genre: "anime", items: split.second.slice(0, MAX_HOME) },
-    { id: "series", ref: "series", title: "PRUEBA 0.1.20 · Todas las series", genre: "anime", items: catalog.slice(0, MAX_HOME) }
+    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.21 · Destacados", genre: "anime", items: featured },
+    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.21 · Catálogo A–M", genre: "anime", items: split.first.slice(0, MAX_HOME) },
+    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.21 · Catálogo N–Z", genre: "anime", items: split.second.slice(0, MAX_HOME) },
+    { id: "series", ref: "series", title: "PRUEBA 0.1.21 · Todas las series", genre: "anime", items: catalog.slice(0, MAX_HOME) }
   ].filter((row) => row.items.length > 0);
   if (rows.length > 1) return rows;
 
@@ -517,7 +520,7 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
-  info.title = "PRUEBA 0.1.20 · " + info.title;
+  info.title = "PRUEBA 0.1.21 · " + info.title;
   return { series: info, episodes: list };
 }
 
