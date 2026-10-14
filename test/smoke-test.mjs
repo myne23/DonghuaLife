@@ -15,16 +15,16 @@ const homeHtml = [
   '<h3><a href="/series/epsilon"><img alt="Epsilon Donghua" src="/images/epsilon.jpg"></a></h3>',
   '<h3><a href="/series/zeta"><img alt="Zeta Donghua" src="/images/zeta.jpg"></a></h3>'
 ].join('');
-const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-temporada-1-5"><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a>';
-const latestPageTwoHtml = '<a href="/watch/new-episode-donghua-1-6"><img alt="New Episode Donghua" src="/images/new.jpg"><span>Capítulo 6</span></a>';
+const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-temporada-1-5"><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a><a href="/ultimos-episodios?page=2">2</a>';
+const latestPageTwoHtml = '<a href="/watch/new-episode-donghua-1-6"><img alt="New Episode Donghua" src="/images/new.jpg"><span>Capítulo 6</span></a><a href="/ultimos-episodios?page=1">1</a><a href="/ultimos-episodios?page=2">2</a>';
 const catalogHtml = [
   '<article><span>Finalizado</span><a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a></article>',
   '<article><span>En Emisión</span><a href="/series/beta"><img alt="Beta Donghua" src="/images/beta.jpg"></a></article>',
   '<article><span>Finalizado</span><a href="/series/charlie"><img alt="Charlie Donghua" src="/images/charlie.jpg"></a></article>',
 ].join('');
 const catalogPageTwoHtml = '<article><span>En Emisión</span><a href="/series/delta"><img alt="Delta Donghua" src="/images/delta.jpg"></a></article>';
-const moviesHtml = '<h2>Pelis Donghuas</h2><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a>';
-const moviesPageTwoHtml = '<h2>Películas</h2><a href="/peliculas/movie-two"><img alt="Movie Two" src="/images/movie-two.jpg"></a>';
+const moviesHtml = '<h2>Pelis Donghuas</h2><a href="/peliculas/movie-one"><img alt="Movie One" src="/images/movie.jpg"></a><a href="/peliculas?page=2">2</a>';
+const moviesPageTwoHtml = '<h2>Películas</h2><a href="/peliculas/movie-two"><img alt="Movie Two" src="/images/movie-two.jpg"></a><a href="/peliculas?page=1">1</a><a href="/peliculas?page=2">2</a>';
 const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a><a href="/watch/el-inmortal-renegado-peli-151-152">Peli Ep 151- 152</a>';
 const directWatch = '<video src="https://cdn.example.test/video.mp4"></video>';
 const metadata = JSON.stringify({videos:[{name:'hd',url:'https://v.okcdn.ru/video.mp4'}]});
@@ -94,15 +94,17 @@ assert.equal(pageMovies.items[0].title, 'Movie One');
 assert.equal(JSON.parse(pageMovies.next).page, 2, 'Películas debe ofrecer una segunda página');
 const pageMovies2 = await plugin.browse('peliculas', pageMovies.next);
 assert.equal(pageMovies2.items[0].title, 'Movie Two', 'Películas debe cargar títulos nuevos');
-const pageMovies3 = await plugin.browse('peliculas', pageMovies2.next);
-assert.deepEqual(pageMovies3.items, [], 'Películas debe cortar si la web repite la última página');
+assert.equal(pageMovies2.next, undefined, 'Películas no debe ofrecer otra página si la web no tiene Siguiente');
+const pageMoviesHome = await plugin.browse('peliculas-home', null);
+assert.equal(pageMoviesHome.items[0].title, 'Movie Two', 'Ver más desde Home debe saltar las películas ya mostradas en la fila');
 const pageLatest = await plugin.browse('ultimos-episodios', null);
 assert.equal(pageLatest.items[0].title, 'Gamma Donghua');
 assert.equal(JSON.parse(pageLatest.next).page, 2, 'Últimos episodios debe ofrecer otra página');
 const pageLatest2 = await plugin.browse('ultimos-episodios', pageLatest.next);
 assert.equal(pageLatest2.items[0].title, 'New Episode Donghua', 'Últimos episodios debe cargar títulos nuevos');
-const pageLatest3 = await plugin.browse('ultimos-episodios', pageLatest2.next);
-assert.deepEqual(pageLatest3.items, [], 'Últimos episodios debe cortar si la web repite la última página');
+assert.equal(pageLatest2.next, undefined, 'Últimos episodios no debe ofrecer otra página si la web no tiene Siguiente');
+const pageLatestHome = await plugin.browse('ultimos-episodios-home', null);
+assert.equal(pageLatestHome.items[0].title, 'New Episode Donghua', 'Ver más desde Home debe saltar las series ya mostradas en la fila');
 const pageB = await plugin.browse('tendencias', '1');
 assert.ok(pageB.items.length > 0);
 const found = await plugin.search('Alpha');
