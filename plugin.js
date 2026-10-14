@@ -453,14 +453,14 @@ function parseMovieItems(html) {
   const section = sectionSlice(source, "(?:pel[ií]culas|pelis\\s+donghuas|donghua\\s+movies)", 70000) || source;
   const out = [];
   const seen = new Set();
-  const re = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/(?:movie|movies|pelicula|peliculas|pel[ií]cula|pel[ií]culas)\\/[^"']+)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/(?:movie|movies|pelicula|peliculas|pel[ií]cula|pel[ií]culas)\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   while ((match = re.exec(section)) && out.length < MAX_PAGE) {
     const url = absolute(match[2]);
     let path = "";
     try { path = new URL(url).pathname; } catch { continue; }
     if (seen.has(path)) continue;
-    const imgMatch = /<img\\b[^>]*>/i.exec(match[3]);
+    const imgMatch = /<img\b[^>]*>/i.exec(match[3]);
     const img = imgMatch ? imgMatch[0] : "";
     const title = attr(img, "alt") || attr(img, "title") || textOf(match[3]);
     if (!title || /^(ver ahora|detalles|play)$/i.test(title)) continue;
@@ -606,7 +606,7 @@ export async function resolve(ref) {
   }
   let html = await getText(url);
   if (!/\/watch\//i.test(url)) {
-    const watch = /href\\s*=\\s*(["'])([^"']*\\/watch\\/[^"']+)\\1/i.exec(html);
+    const watch = /href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1/i.exec(html);
     if (watch) {
       url = absolute(watch[2], url);
       html = await getText(url);
