@@ -177,7 +177,7 @@ globalThis.kino.fetch = async (input) => {
     return {ok:true,status:200,async text(){return '<a href="/series/shrouding-heavens"><img alt="Shrouding the Heavens" src="/images/shrouding.jpg"></a>';},async json(){return {};}};
   }
   if (url === 'https://donghualife.com/series/shrouding-heavens') {
-    return {ok:true,status:200,async text(){return shroudingDetailHtml;},async json(){return {};}};
+    return {ok:true,status:200,async text(){return '<h1>Shrouding the Heavens</h1><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/shrouding-heavens-1-1">Capítulo 1</a>';},async json(){return {};}};
   }
   throw new Error('URL inesperada en prueba de ficha incompleta: ' + url);
 };
