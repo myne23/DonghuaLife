@@ -334,7 +334,6 @@ function parseLatestSeries(html) {
       .replace(/^recomendado\s+/i, "")
       .replace(/\bEP\s*\d+\b/ig, "")
       .replace(/\b(?:capítulo|episodio)\s*\d+\b/ig, "")
-      .replace(/\bVIP\b/ig, "")
       .replace(/\s+/g, " ")
       .trim();
     // El texto de la tarjeta tiene prioridad: el bloque vecino puede contener enlaces
