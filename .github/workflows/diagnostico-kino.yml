@@ -3,6 +3,8 @@ name: Diagnóstico Kino SDK
 on:
   push:
     branches: [diagnostico-sdk]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
