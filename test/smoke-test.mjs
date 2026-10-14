@@ -145,7 +145,8 @@ globalThis.kino.browser = {
       finalUrl: url,
       media: [
         {url:'https://cdn.example.test/playlist.m3u8',mime:'application/vnd.apple.mpegurl',headers:{Referer:url,'User-Agent':'KinoTest'}},
-        {url:'https://cdn.example.test/low.mp4',mime:'video/mp4',headers:{}}
+        {url:'https://cdn.example.test/low.mp4',mime:'video/mp4',headers:{}},
+        {url:'https://cdn.example.test/segment-001.ts',mime:'video/mp2t',headers:{}}
       ],
       subtitles:[{url:'https://cdn.example.test/es.vtt',lang:'es'}]
     };
@@ -163,6 +164,10 @@ const captured = await capturePlugin.resolve('/watch/alpha-donghua-1-1');
 assert.equal(captured.url,'https://cdn.example.test/playlist.m3u8','La captura debe priorizar HLS frente a MP4');
 assert.equal(captured.mime,'application/vnd.apple.mpegurl');
 assert.equal(captured.headers['User-Agent'],'KinoTest','Debe conservar los headers capturados');
+assert.equal(captured.alternatives.length,1,'Debe conservar el MP4 capturado como alternativa al HLS');
+assert.equal(captured.alternatives[0].url,'https://cdn.example.test/low.mp4');
+assert.equal(captured.alternatives[0].mime,'video/mp4');
+assert.equal(captured.alternatives[0].label,'cdn.example.test · MP4');
 assert.deepEqual(captured.subtitles,[{lang:'es',url:'https://cdn.example.test/es.vtt',format:'vtt'}]);
 
 delete globalThis.kino.browser;
