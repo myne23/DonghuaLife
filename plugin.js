@@ -1305,7 +1305,7 @@ async function resolveRenderedDailymotionPage(url) {
     // La captura de red puede recoger callbacks de anuncios de Dailymotion en vez
     // del manifiesto. Leemos el DOM tras ejecutar los scripts y buscamos el ID del embed.
     const page = await kino.browser.page(url, {
-      timeoutMs: 5500,
+      timeoutMs: 4000,
       waitFor: /dailymotion\.com\/(?:embed\/video|video\/)|<iframe[^>]+(?:dailymotion|dmcdn)/i
     });
     const html = String(page && page.html || "");
