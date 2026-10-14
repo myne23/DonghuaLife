@@ -242,24 +242,33 @@ export async function search(query) {
   const term = String((typeof query === "string" ? query : query && (query.q || query.originalTitle || query.title)) || "").trim();
   if (!term) return [];
   const wanted = normalizeSearch(term);
-  const words = wanted.split(/\s+/).filter(Boolean);
+  const words = wanted.split(/\\s+/).filter(Boolean);
   const matches = (item) => {
     const haystack = normalizeSearch(item.title + " " + item.id + " " + item.ref);
     return haystack.includes(wanted) || words.length > 1 && words.every((word) => haystack.includes(word));
   };
-  const collected = [];
-  // La búsqueda del sitio a veces devuelve resultados parciales o ignora el parámetro.
-  // Siempre comprobamos varias páginas del catálogo; no dejamos de buscar al hallar un solo resultado.
-  const urls = [SERIES + "?search=" + encodeURIComponent(term), SERIES, BASE + "/", BASE + "/ultimos-episodios"];
-  for (let page = 2; page <= 8; page++) urls.push(SERIES + "?page=" + page);
-  for (const url of urls) {
+
+  // Primero consultamos la búsqueda del propio sitio. La versión anterior descargaba
+  // hasta once páginas en serie en cada búsqueda, incluso cuando ya había un resultado.
+  const primaryUrls = [SERIES + "?search=" + encodeURIComponent(term), BASE + "/"];
+  for (const url of primaryUrls) {
     try {
-      const found = parseSeries(await getText(url));
-      collected.push(...found.filter(matches));
-      if (unique(collected).length >= MAX_PAGE) break;
-    } catch (e) { log("No se pudo consultar una página de búsqueda", e.message); }
+      const found = parseSeries(await getText(url)).filter(matches);
+      if (found.length) return unique(found).slice(0, MAX_PAGE);
+    } catch (e) { log("Falló la búsqueda principal", e.message); }
   }
-  return unique(collected).slice(0, MAX_PAGE);
+
+  // Solo si la búsqueda directa no encontró nada, hacemos una búsqueda de respaldo
+  // limitada a las primeras páginas del catálogo para cubrir títulos con alias o slugs.
+  const fallback = [];
+  for (let page = 1; page <= 3; page++) {
+    try {
+      const url = SERIES + (page > 1 ? "?page=" + page : "");
+      fallback.push(...parseSeries(await getText(url)).filter(matches));
+      if (unique(fallback).length >= MAX_PAGE) break;
+    } catch (e) { log("No se pudo consultar el catálogo de respaldo", e.message); }
+  }
+  return unique(fallback).slice(0, MAX_PAGE);
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
