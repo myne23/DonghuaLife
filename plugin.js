@@ -323,9 +323,11 @@ function parseHomeRows(homeHtml, latestHtml) {
   if (trends.length < 3) trends = allHome;
   trends = trends.filter((x) => !featured.some((y) => y.id === x.id) && !latest.some((y) => y.id === x.id)).slice(0, MAX_HOME);
   return [
-    { id: "destacados", title: "Destacados", genre: "anime", items: featured },
-    { id: "ultimos-episodios", title: "Últimos episodios", genre: "anime", items: latest },
-    { id: "tendencias", title: "Tendencias", genre: "anime", items: trends }
+    // Cada fila tiene su propio ref: Kino usa este valor para «Ver más»,
+    // mientras que el ref de cada tarjeta sigue apuntando a la ficha de la serie.
+    { id: "destacados", ref: "destacados", title: "Destacados", items: featured },
+    { id: "ultimos-episodios", ref: "ultimos-episodios", title: "Últimos episodios", items: latest },
+    { id: "tendencias", ref: "tendencias", title: "Tendencias", items: trends }
   ].filter((row) => row.items.length);
 }
 
