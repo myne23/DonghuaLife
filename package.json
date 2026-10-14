@@ -1,0 +1,8 @@
+{
+  "name": "kino-plugin-donghualife",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:smoke": "node test/smoke-test.mjs"
+  }
+}
