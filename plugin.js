@@ -188,10 +188,7 @@ function parseEpisodes(html, pageUrl) {
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
     if (seen.has(path)) continue;
-    // Algunas fichas colocan una película junto a los episodios con un enlace como
-    // "Peli 151-152". No es una temporada: la película se lista en el catálogo Películas.
     const linkLabel = textOf(match[3]);
-    if (/\b(?:peli(?:cula)?|movie|film)\b/i.test(linkLabel + " " + path)) continue;
     // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
     const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
@@ -200,14 +197,21 @@ function parseEpisodes(html, pageUrl) {
 
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
-    let label = textOf(match[3]);
+    const innerImage = /<img\b[^>]*>/i.exec(match[3]);
+    let label = textOf(match[3]) ||
+      (innerImage ? (attr(innerImage[0], "alt") || attr(innerImage[0], "title")) : "") ||
+      attr(match[0], "aria-label") || attr(match[0], "title");
     label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
-    if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
+    const specialMovie = /^peli\s*ep\s*\d+\s*-\s*\d+$/i.test(label);
+    if (specialMovie) {
+      // El sitio lo presenta como una opción especial junto a Temporada 1.
+      // Conservamos exactamente el rótulo de la web para usarlo como nombre de temporada.
+    } else if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
       label = "Capítulo " + number;
     } else {
       label = "Capítulo " + number + " · " + label;
     }
-    out.push({ season, number, ref: path, title: label.slice(0, 180) });
+    out.push({ season, number, ref: path, title: label.slice(0, 180), specialMovie });
     seen.add(path);
   }
   return out.sort((a, b) => a.season - b.season || a.number - b.number);
@@ -424,11 +428,15 @@ function browseCursor(cursor) {
   try {
     const parsed = JSON.parse(String(cursor));
     if (parsed && Number.isInteger(parsed.page) && parsed.page >= 1) {
-      return { page: parsed.page, previous: String(parsed.previous || "") };
+      return {
+        page: parsed.page,
+        previous: String(parsed.previous || ""),
+        seen: Array.isArray(parsed.seen) ? parsed.seen.filter((value) => typeof value === "string").slice(0, 200) : []
+      };
     }
   } catch {}
   const page = Number(cursor);
-  return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "" };
+  return { page: Number.isInteger(page) && page >= 1 ? page : 1, previous: "", seen: [] };
 }
 
 function pageSignature(items) {
@@ -598,17 +606,35 @@ export async function browse(ref, cursor) {
   }
 
   if (ref === "ultimos-episodios") {
-    const url = BASE + "/ultimos-episodios" + (page > 1 ? "?page=" + page : "");
-    const latestHtml = await getText(url);
     const catalogHtml = await getText(SERIES + "?sort=az");
     const catalog = unique(parseSeries(catalogHtml));
-    let parsed = unique(parseLatestSeries(latestHtml));
-    if (!parsed.length && page === 1) {
-      const homeHtml = await getText(BASE + "/");
-      parsed = unique(parseLatestSeries(sectionSlice(homeHtml, "últimos? episodios", 60000)));
+    const seen = new Set(cursorState.seen || []);
+    const items = [];
+    let sourcePage = page;
+    // Una misma serie puede aparecer varias veces en la página de episodios recientes.
+    // Avanzamos páginas fuente hasta encontrar series nuevas, sin devolver tandas repetidas.
+    for (let checked = 0; checked < 10 && sourcePage <= 100 && items.length < MAX_PAGE; checked++, sourcePage++) {
+      const url = BASE + "/ultimos-episodios" + (sourcePage > 1 ? "?page=" + sourcePage : "");
+      const latestHtml = await getText(url);
+      const parsed = unique(parseLatestSeries(latestHtml));
+      if (!parsed.length) break;
+      const mapped = mapToCatalog(parsed, catalog);
+      for (const item of mapped) {
+        if (seen.has(item.ref) || items.some((prior) => prior.ref === item.ref)) continue;
+        items.push(item);
+        seen.add(item.ref);
+      }
+      // Si ya encontramos nuevas series, devolvemos esta tanda y seguimos desde la página
+      // siguiente en la próxima petición. Si no, seguimos buscando sin crear una página vacía.
+      if (items.length) break;
     }
-    const items = mapToCatalog(parsed, catalog).slice(0, MAX_PAGE);
-    return pagedResult(items, page, cursorState.previous);
+    if (!items.length) return { items: [] };
+    return {
+      items: items.slice(0, MAX_PAGE),
+      next: sourcePage <= 100
+        ? JSON.stringify({ page: sourcePage + 1, seen: Array.from(seen).slice(-200) })
+        : undefined
+    };
   }
 
   if (ref === "tendencias") {
@@ -654,13 +680,39 @@ export async function browse(ref, cursor) {
   throw kino.error("not_found", "La categoría solicitada no existe");
 }
 export async function episodes(ref) {
-  const url = seriesUrl(ref);
+  const specialPrefix = "special-peli:";
+  const specialMode = String(ref || "").startsWith(specialPrefix);
+  const baseRef = specialMode ? String(ref).slice(specialPrefix.length) : ref;
+  const url = seriesUrl(baseRef);
   if (!url) throw kino.error("not_found", "No se encontró la serie");
   const html = await getText(url);
   const slug = slugFromUrl(url);
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
+
+  const specialMovies = list.filter((episode) => episode.specialMovie);
+  if (specialMode) {
+    const selected = specialMovies[0];
+    if (!selected) throw kino.error("not_found", "No se encontró el especial de la serie");
+    return {
+      series: info,
+      episodes: [{ season: 1, number: 1, ref: selected.ref, title: selected.title }]
+    };
+  }
+
+  const regularEpisodes = list.filter((episode) => !episode.specialMovie);
+  if (specialMovies.length && regularEpisodes.length) {
+    const seasonRef = specialPrefix + slug;
+    return {
+      series: info,
+      episodes: regularEpisodes,
+      seasons: [
+        { id: slug, ref: slug, title: "Temporada 1", number: 1, current: true },
+        { id: slug + "-special-peli", ref: seasonRef, title: specialMovies[0].title, number: 2 }
+      ]
+    };
+  }
   return { series: info, episodes: list };
 }
 
