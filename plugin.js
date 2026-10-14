@@ -314,7 +314,7 @@ function parseHomeRows(homeHtml, latestHtml) {
   let featured = unique(parseSeries(featuredHtml));
   // Si el HTML no conserva el encabezado de la sección, usar el catálogo de la portada
   // para no terminar con una sola tarjeta en el banner.
-  if (featured.length < 3) featured = allHome;
+  if (featured.length < 3) featured = allHome.slice(0, Math.min(10, allHome.length));
   featured = featured.slice(0, MAX_HOME);
   let latest = unique(parseLatestSeries(latestHtml || ""));
   if (!latest.length) latest = unique(parseLatestSeries(homeHtml));
