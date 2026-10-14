@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.46 deja de descartar las fuentes HLS capturadas basándose en una petición de comprobación separada, ya que Kino puede recibir una respuesta distinta a la del navegador integrado. Las URLs capturadas se entregan al reproductor sin ese filtro previo.
+La versión 0.1.47 deja de descartar las fuentes HLS capturadas basándose en una petición de comprobación separada. También reconoce los iframes públicos de Dailymotion en la página del episodio y añade Referer/Origin de Dailymotion a sus fuentes CDN.
 
 ## Estado del desarrollo
 
