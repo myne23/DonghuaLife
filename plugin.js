@@ -279,12 +279,12 @@ function normalizePlayerMarkup(html) {
 }
 
 function providerForUrl(url) {
-  if (/ok\\.ru\\/(?:video|videoembed)\\//i.test(url)) return "okru";
-  if (/(?:dailymotion\\.com|dai\\.ly)\\//i.test(url)) return "dailymotion";
-  if (/rumble\\.com\\//i.test(url)) return "rumble";
-  if (/odysee\\.com\\//i.test(url)) return "odysee";
-  if (/(?:voe\\.sx|voe\\.to)\\//i.test(url)) return "voe";
-  if (/(?:r2\\.dev|cloudflarestorage\\.com|cloudflarestream\\.com|videodelivery\\.net)\\//i.test(url)) return "r2";
+  if (/ok\.ru\/(?:video|videoembed)\//i.test(url)) return "okru";
+  if (/(?:dailymotion\.com|dai\.ly)\//i.test(url)) return "dailymotion";
+  if (/rumble\.com\//i.test(url)) return "rumble";
+  if (/odysee\.com\//i.test(url)) return "odysee";
+  if (/(?:voe\.sx|voe\.to)\//i.test(url)) return "voe";
+  if (/(?:r2\.dev|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)\//i.test(url)) return "r2";
   return "";
 }
 
@@ -293,24 +293,27 @@ function parseSourceCandidates(html, pageUrl) {
   const out = [];
   const seen = new Set();
   const add = (raw) => {
-    const url = absolute(String(raw || "").replace(/&amp;/gi, "&").replace(/[),;\\]}]+$/g, ""), pageUrl);
-    if (!/^https:\\/\\//i.test(url) || seen.has(url)) return;
+    const url = absolute(String(raw || "").replace(/&amp;/gi, "&").replace(/[),;}\]]+$/g, ""), pageUrl);
+    if (!/^https:\/\//i.test(url) || seen.has(url)) return;
     const provider = providerForUrl(url);
-    const direct = /\\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(url);
+    const direct = /\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(url);
     if (!provider && !direct) return;
     seen.add(url);
-    out.push({ url, provider: direct ? "direct" : provider,
+    out.push({
+      url,
+      provider: direct ? "direct" : provider,
       label: provider === "r2" ? "R2 · Directo" : provider === "dailymotion" ? "Dailymotion" :
         provider === "rumble" ? "Rumble" : provider === "odysee" ? "Odysee" :
-        provider === "voe" ? "Voe" : provider === "okru" ? "OK.ru" : "Video directo" });
+        provider === "voe" ? "Voe" : provider === "okru" ? "OK.ru" : "Video directo"
+    });
   };
-  const urls = /https?:\\/\\/[^\\s"'<>\\\\]+/gi;
+  const urls = /https?:\/\/[^\s"'<>\\]+/gi;
   let match;
   while ((match = urls.exec(source))) add(match[0]);
-  const attrs = /(?:src|data-src|data-url|embedUrl|videoUrl|file|url)\\s*[:=]\\s*["']([^"']{4,2048})["']/gi;
+  const attrs = /(?:src|data-src|data-url|embedUrl|videoUrl|file|url)\s*[:=]\s*["']([^"']{4,2048})["']/gi;
   while ((match = attrs.exec(source))) {
-    const value = match[1].replace(/\\\\\\//g, "/");
-    if (/^(?:https?:)?\\/\\//i.test(value)) add(value.startsWith("//") ? "https:" + value : value);
+    const value = match[1].replace(/\\\//g, "/");
+    if (/^(?:https?:)?\/\//i.test(value)) add(value.startsWith("//") ? "https:" + value : value);
   }
   return out;
 }
@@ -319,7 +322,7 @@ function parseEmbed(html, pageUrl) {
   const candidates = parseSourceCandidates(html, pageUrl);
   const direct = candidates.find((item) => item.provider === "direct" || item.provider === "r2");
   if (direct) return direct.url;
-  const re = /<(?:iframe|video|source)\\b[^>]*(?:src|data-src|data-lazy-src)\\s*=\\s*(["'])([^"']+)\\1[^>]*>/gi;
+  const re = /<(?:iframe|video|source)\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*(["'])([^"']+)\1[^>]*>/gi;
   let match;
   while ((match = re.exec(normalizePlayerMarkup(html)))) {
     const url = absolute(match[2], pageUrl);
