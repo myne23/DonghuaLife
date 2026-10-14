@@ -89,7 +89,7 @@ function parseSeries(html) {
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src") ||
       /(?:background-image)\s*:\s*url\((["']?)([^)"']+)\1\)/i.exec(match[0])?.[2] || "";
     const candidate = {
-      id: slug, ref: SERIES + "/" + slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
+      id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
       kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
       backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"]
     };
@@ -242,33 +242,26 @@ export async function search(query) {
   const term = String((typeof query === "string" ? query : query && (query.q || query.originalTitle || query.title)) || "").trim();
   if (!term) return [];
   const wanted = normalizeSearch(term);
-  const words = wanted.split(/\\s+/).filter(Boolean);
+  const words = wanted.split(/\s+/).filter(Boolean);
   const matches = (item) => {
     const haystack = normalizeSearch(item.title + " " + item.id + " " + item.ref);
-    return haystack.includes(wanted) || words.length > 1 && words.every((word) => haystack.includes(word));
+    return haystack.includes(wanted) || (words.length > 1 && words.every((word) => haystack.includes(word)));
   };
 
-  // Primero consultamos la búsqueda del propio sitio. La versión anterior descargaba
-  // hasta once páginas en serie en cada búsqueda, incluso cuando ya había un resultado.
-  const primaryUrls = [SERIES + "?search=" + encodeURIComponent(term), BASE + "/"];
-  for (const url of primaryUrls) {
-    try {
-      const found = parseSeries(await getText(url)).filter(matches);
-      if (found.length) return unique(found).slice(0, MAX_PAGE);
-    } catch (e) { log("Falló la búsqueda principal", e.message); }
-  }
-
-  // Solo si la búsqueda directa no encontró nada, hacemos una búsqueda de respaldo
-  // limitada a las primeras páginas del catálogo para cubrir títulos con alias o slugs.
-  const fallback = [];
-  for (let page = 1; page <= 3; page++) {
-    try {
-      const url = SERIES + (page > 1 ? "?page=" + page : "");
-      fallback.push(...parseSeries(await getText(url)).filter(matches));
-      if (unique(fallback).length >= MAX_PAGE) break;
-    } catch (e) { log("No se pudo consultar el catálogo de respaldo", e.message); }
-  }
-  return unique(fallback).slice(0, MAX_PAGE);
+  // La búsqueda de DonghuaLife se dibuja parcialmente con JavaScript. Consultar ?search=
+  // no garantiza resultados; leemos varias páginas del catálogo en paralelo y filtramos aquí.
+  // Así evitamos hasta cuatro esperas consecutivas que podían superar el límite de 15 s de Kino.
+  const urls = [
+    SERIES,
+    SERIES + "?page=2",
+    SERIES + "?page=3",
+    BASE + "/"
+  ];
+  const pages = await Promise.all(urls.map(async (url) => {
+    try { return parseSeries(await getText(url)); }
+    catch (e) { log("No se pudo consultar una página de búsqueda", e.message); return []; }
+  }));
+  return unique(pages.flat().filter(matches)).slice(0, MAX_PAGE);
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
@@ -309,7 +302,7 @@ function parseLatestSeries(html) {
     const img = imgMatch ? imgMatch[0] : "";
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
     const label = attr(img, "alt") || attr(img, "title") || slug.replace(/-/g, " ");
-    out.push({ id: slug, ref: SERIES + "/" + slug, title: textOf(label).slice(0, 200), kind: "series",
+    out.push({ id: slug, ref: slug, title: textOf(label).slice(0, 200), kind: "series",
       poster: posterRaw ? absolute(posterRaw) : undefined, backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"] });
     seen.add(slug);
   }
