@@ -65,14 +65,14 @@ function parseSeries(html) {
   const bySlug = new Map();
   // Reunimos todos los enlaces a una ficha antes de elegir el mejor: la página repite
   // el mismo enlace en el título, la imagen y el botón «DETALLES».
-  const re = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/series\\/[^"']+)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/series\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   while ((match = re.exec(html))) {
     const url = absolute(match[2]);
     const slug = slugFromUrl(url);
     if (!slug || slug === "series") continue;
     const inner = match[3];
-    const imgMatch = /<img\\b[^>]*>/i.exec(inner);
+    const imgMatch = /<img\b[^>]*>/i.exec(inner);
     const img = imgMatch ? imgMatch[0] : "";
     let title = attr(img, "alt") || attr(img, "title") || "";
     const innerText = textOf(inner);
@@ -81,13 +81,13 @@ function parseSeries(html) {
     // bloque cercano y metadatos habituales de tarjetas.
     const around = html.slice(Math.max(0, match.index - 1800), Math.min(html.length, re.lastIndex + 1800));
     if (!title || /^(ver ahora|detalles|ver detalles|ver ahora detalles|ver m[aá]s|play)$/i.test(title)) {
-      const heading = /<h[1-4]\\b[^>]*>([\\s\\S]*?)<\\/h[1-4]>/i.exec(around);
-      const labelled = /(?:data-title|aria-label|title)\\s*=\\s*(["'])(.*?)\\1/i.exec(match[0]);
+      const heading = /<h[1-4]\b[^>]*>([\s\S]*?)<\/h[1-4]>/i.exec(around);
+      const labelled = /(?:data-title|aria-label|title)\s*=\s*(["'])(.*?)\1/i.exec(match[0]);
       title = (labelled && labelled[2]) || (heading && textOf(heading[1])) || title;
     }
     const badTitle = !title || /^(ver ahora|detalles|ver detalles|ver ahora detalles|ver m[aá]s|play|series|donghuas|todas|popular|reciente|a-z)$/i.test(title.trim());
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src") ||
-      /(?:background-image)\\s*:\\s*url\\((["']?)([^)"']+)\\1\\)/i.exec(match[0])?.[2] || "";
+      /(?:background-image)\s*:\s*url\((["']?)([^)"']+)\1\)/i.exec(match[0])?.[2] || "";
     const candidate = {
       id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
       kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
@@ -99,9 +99,9 @@ function parseSeries(html) {
   }
   // El inicio tiene un banner destacado que no siempre está dentro de un enlace /series/.
   // Si todavía no apareció como tarjeta, recuperamos el título desde los metadatos de la página.
-  const ogTitle = /<meta\\b[^>]*(?:property|name)\\s*=\\s*["'](?:og:title|twitter:title)["'][^>]*content\\s*=\\s*["']([^"']+)["']/i.exec(html);
-  const ogImage = /<meta\\b[^>]*(?:property|name)\\s*=\\s*["'](?:og:image|twitter:image)["'][^>]*content\\s*=\\s*["']([^"']+)["']/i.exec(html);
-  const heroLink = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/series\\/[^"']+)\\1[^>]*>[\\s\\S]{0,5000}?<\\/a>/i.exec(html);
+  const ogTitle = /<meta\b[^>]*(?:property|name)\s*=\s*["'](?:og:title|twitter:title)["'][^>]*content\s*=\s*["']([^"']+)["']/i.exec(html);
+  const ogImage = /<meta\b[^>]*(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["'][^>]*content\s*=\s*["']([^"']+)["']/i.exec(html);
+  const heroLink = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/series\/[^"']+)\1[^>]*>[\s\S]{0,5000}?<\/a>/i.exec(html);
   if (heroLink && ogTitle) {
     const slug = slugFromUrl(absolute(heroLink[2]));
     if (slug && !bySlug.has(slug)) {
@@ -123,7 +123,7 @@ function parseInfo(html, slug) {
   const title = h1 ? textOf(h1[1]) : slug.replace(/-/g, " ");
   const images = html.match(/<img\b[^>]*>/gi) || [];
   let poster = "";
-  const og = /<meta\\b[^>]*(?:property|name)\\s*=\\s*["'](?:og:image|twitter:image)["'][^>]*content\\s*=\\s*["']([^"']+)["']/i.exec(html);
+  const og = /<meta\b[^>]*(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["'][^>]*content\s*=\s*["']([^"']+)["']/i.exec(html);
   if (og) poster = absolute(og[1]);
   for (const img of images) {
     if (!poster && /poster|cover|portada|logo|banner/i.test(attr(img, "alt") + " " + attr(img, "class"))) {
@@ -158,8 +158,8 @@ function parseEpisodes(html, pageUrl) {
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
     let label = textOf(match[3]);
-    label = label.replace(/\\b(?:fuentes?|subt[ií]tulos?|vip)\\b/gi, " ").replace(/\\s+/g, " ").trim();
-    if (!label || /^(?:cap[ií]tulo\\s*)?\\d+$/i.test(label) || label.length > 100) label = "Capítulo " + number;
+    label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
+    if (!label || /^(?:cap[ií]tulo\s*)?\d+$/i.test(label) || label.length > 100) label = "Capítulo " + number;
     else if (!/cap[ií]tulo|episodio/i.test(label)) label = "Capítulo " + number + " · " + label;
     out.push({ season, number, ref: path, title: label.slice(0, 180) });
     seen.add(path);
