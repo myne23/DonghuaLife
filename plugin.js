@@ -328,7 +328,13 @@ function parseLatestSeries(html) {
       const heading = /<h[1-4]\b[^>]*>([\s\S]*?)<\/h[1-4]>/i.exec(around);
       if (heading) title = textOf(heading[1]);
     }
-    title = textOf(title).replace(/^recomendado\s+/i, "").trim();
+    title = textOf(title)
+      .replace(/^recomendado\s+/i, "")
+      .replace(/\bEP\s*\d+\b/ig, "")
+      .replace(/\b(?:capítulo|episodio)\s*\d+\b/ig, "")
+      .replace(/\bVIP\b/ig, "")
+      .replace(/\s+/g, " ")
+      .trim();
     // El texto de la tarjeta tiene prioridad: el bloque vecino puede contener enlaces
     // a otras series y no debemos asignar por accidente la ficha de otra tarjeta.
     let slug = title ? normalizeSearch(title).replace(/\s+/g, "-") : "";
