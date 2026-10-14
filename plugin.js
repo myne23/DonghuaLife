@@ -1316,8 +1316,6 @@ async function capturePageStream(url) {
         if (checkedHls >= 2) continue;
         checkedHls++;
         if (!await validateCapturedHls(item)) continue;
-      }
-      filtered.push(item);
     }
       filtered.push(item);
     }
