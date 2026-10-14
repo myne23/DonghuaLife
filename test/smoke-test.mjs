@@ -140,6 +140,6 @@ globalThis.kino.fetch = async (input) => {
     : url.startsWith('https://ok.ru/videoembed/') ? okHtml : '';
   return {ok:true,status:200,async text(){return body;},async json(){return JSON.parse(body);}};
 };
-const okStream = await plugin.resolve('/watch/alpha-donghua-1-1');
+const okStream = await plugin.resolve('/watch/alpha-donghua-1-2');
 assert.equal(okStream.url,'https://v.okcdn.ru/video.mp4');
 console.log('Prueba simulada correcta: recomendaciones, últimos episodios, estrenos VIP, tendencias, catálogo, búsqueda, episodios y reproducción.');
