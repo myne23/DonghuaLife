@@ -1063,7 +1063,7 @@ function isDirectMediaUrl(value) {
 function sourceHostAllowed(value) {
   try {
     const host = new URL(value).hostname.toLowerCase();
-    return /(?:^|\.)(?:dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
+    return /(?:^|\.)(?:dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|vk\.com|vkvideo\.ru|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
   } catch { return false; }
 }
 
@@ -1247,7 +1247,7 @@ function capturedStream(capture) {
     if (/webm/.test(mime) || /\.webm(?:[?#]|$)/i.test(url)) return "webm";
     return "";
   };
-  const rank = (item) => mediaType(item) === "hls" ? 0 : mediaType(item) === "mp4" ? 1 : mediaType(item) === "webm" ? 2 : 3;
+  const rank = (item) => { const type = mediaType(item); let host = ""; try { host = new URL(String(item && item.url || "")).hostname.toLowerCase(); } catch {} if (type === "hls" && host === "cdndirector.dailymotion.com") return -1; return type === "hls" ? 0 : type === "mp4" ? 1 : type === "webm" ? 2 : 3; };
   const candidates = media.filter((item) => {
     if (!item || !/^https:\/\//i.test(String(item.url || "")) || !mediaType(item)) return false;
     try {
