@@ -48,13 +48,23 @@ globalThis.kino = {
 const plugin = await import('../plugin.js?smoke=2');
 const home = await plugin.home();
 const categories = await plugin.categories(null);
+const sectionHome = await plugin.section({ tab: null });
+assert.equal(sectionHome.tab, 'inicio');
+assert.deepEqual(sectionHome.tabs.map((entry) => entry.id), ['inicio', 'destacados', 'catalogo-a', 'catalogo-b', 'series']);
+assert.ok(sectionHome.rows.length >= 3, 'La sección propia debe mostrar varias filas');
+const sectionCatalog = await plugin.section({ tab: 'series' });
+assert.equal(sectionCatalog.tab, 'series');
+assert.equal(sectionCatalog.rows.length, 1);
+assert.equal(sectionCatalog.rows[0].id, 'series');
+assert.ok(sectionCatalog.rows[0].items.every((item) => item.kind === 'series' && item.ref));
+
 assert.deepEqual(categories.map((category) => category.id), ['destacados', 'catalogo-a', 'catalogo-b', 'series']);
 assert.ok(categories.every((category) => category.title && category.ref));
 
 assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
-assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.19 · Destacados'));
-assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.19 · Catálogo A–M'));
-assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.19 · Todas las series'));
+assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.20 · Destacados'));
+assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.20 · Catálogo A–M'));
+assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.20 · Todas las series'));
 assert.equal(home[0].items[0].title, 'Hero Donghua');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
 assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'hero');
