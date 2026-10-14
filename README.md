@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.18 cambia la identidad del plugin a `donghualife-v3` y reconstruye Inicio desde cero: obtiene primero el catálogo, crea filas de Destacados, Catálogo A–M, Catálogo N–Z y Todas las series, y cada fila tiene su propio `browse(ref)` implementado. Los títulos llevan el prefijo visible `PRUEBA 0.1.18` para verificar qué código ejecuta Kino. Esta compilación es una intervención diagnóstica; todavía no demuestra navegación real dentro de la app.
+La versión 0.1.21 conserva la sección propia de Kino y las cuatro filas (Destacados, Catálogo A–M, Catálogo N–Z y Todas las series). Para el Inicio general, obtiene las filas con una única consulta rápida al catálogo y evita reintentos prolongados que pueden superar el tiempo de carga de la interfaz. Los títulos llevan el prefijo visible `PRUEBA 0.1.21` para identificar la versión que está ejecutándose.
 
 ## Estado del desarrollo
 
