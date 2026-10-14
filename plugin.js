@@ -1287,8 +1287,8 @@ async function validateCapturedHls(item) {
       log("Manifiesto HLS rechazado", sourceLabel(item.url), "HTTP", response.status);
       return false;
     }
-    const body = String(await response.text() || "").replace(/^\\uFEFF/, "").trimStart();
-    if (!/^#EXTM3U(?:\\s|$)/i.test(body)) {
+    const body = String(await response.text() || "").replace(/^\uFEFF/, "").trimStart();
+    if (!/^#EXTM3U(?:\s|$)/i.test(body)) {
       log("Manifiesto HLS rechazado", sourceLabel(item.url), "respuesta no HLS");
       return false;
     }
