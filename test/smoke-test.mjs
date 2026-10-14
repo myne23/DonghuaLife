@@ -27,11 +27,13 @@ const metadata = JSON.stringify({videos:[{name:'hd',url:'https://v.okcdn.ru/vide
 const playerOptions = JSON.stringify({flashvars:{metadata}}).replace(/"/g,'&quot;');
 const okHtml = '<div data-options="' + playerOptions + '"></div>';
 
+const fetchCalls = [];
 globalThis.kino = {
   log() {},
   error(code, message) { const error = new Error(message); error.code = code; return error; },
   async fetch(input) {
     const url = String(input);
+    fetchCalls.push(url);
     let body = '';
     if (url === 'https://donghualife.com/' || url === 'https://donghualife.com') body = homeHtml;
     else if (url === 'https://donghualife.com/ultimos-episodios') body = latestHtml;
@@ -46,7 +48,9 @@ globalThis.kino = {
 };
 
 const plugin = await import('../plugin.js?smoke=2');
+const beforeHomeFetches = fetchCalls.length;
 const home = await plugin.home();
+assert.equal(fetchCalls.length - beforeHomeFetches, 1, 'El Inicio debe cargar sus filas con una sola consulta cuando responde el host principal');
 const categories = await plugin.categories(null);
 const sectionHome = await plugin.section({ tab: null });
 assert.equal(sectionHome.tab, 'inicio');
@@ -62,12 +66,12 @@ assert.deepEqual(categories.map((category) => category.id), ['destacados', 'cata
 assert.ok(categories.every((category) => category.title && category.ref));
 
 assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
-assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.20 · Destacados'));
-assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.20 · Catálogo A–M'));
-assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.20 · Todas las series'));
-assert.equal(home[0].items[0].title, 'Hero Donghua');
+assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.21 · Destacados'));
+assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.21 · Catálogo A–M'));
+assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.21 · Todas las series'));
+assert.equal(home[0].items[0].title, 'Alpha Donghua', 'Destacados usa el catálogo disponible sin pedir una segunda página');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
-assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'hero');
+assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'alpha');
 const pageA = await plugin.browse('catalogo-a', '1');
 assert.ok(pageA.items.length > 0);
 const pageB = await plugin.browse('catalogo-b', '1');
