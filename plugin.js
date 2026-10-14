@@ -89,7 +89,7 @@ function parseSeries(html) {
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src") ||
       /(?:background-image)\s*:\s*url\((["']?)([^)"']+)\1\)/i.exec(match[0])?.[2] || "";
     const candidate = {
-      id: slug, ref: slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
+      id: slug, ref: SERIES + "/" + slug, title: (badTitle ? slug.replace(/-/g, " ") : title).slice(0, 200),
       kind: "series", poster: posterRaw ? absolute(posterRaw) : undefined,
       backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"]
     };
@@ -302,7 +302,7 @@ function parseLatestSeries(html) {
     const img = imgMatch ? imgMatch[0] : "";
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
     const label = attr(img, "alt") || attr(img, "title") || slug.replace(/-/g, " ");
-    out.push({ id: slug, ref: slug, title: textOf(label).slice(0, 200), kind: "series",
+    out.push({ id: slug, ref: SERIES + "/" + slug, title: textOf(label).slice(0, 200), kind: "series",
       poster: posterRaw ? absolute(posterRaw) : undefined, backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"] });
     seen.add(slug);
   }
