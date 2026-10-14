@@ -1073,11 +1073,10 @@ function extractSourceCandidates(html, pageUrl) {
 function directStream(url) {
   if (!isDirectMediaUrl(url)) return null;
   const path = new URL(url).pathname;
-  return {
-    url,
-    mime: /\.m3u8$/i.test(path) ? "application/vnd.apple.mpegurl" :
-      /\.webm$/i.test(path) ? "video/webm" : "video/mp4"
-  };
+  const mime = /\.m3u8$/i.test(path) ? "application/vnd.apple.mpegurl" :
+    /\.webm$/i.test(path) ? "video/webm" : "video/mp4";
+  const kind = mime === "application/vnd.apple.mpegurl" ? "HLS" : mime === "video/webm" ? "WEBM" : "MP4";
+  return { url, mime, label: (sourceLabel(url) + " · " + kind).slice(0, 48) };
 }
 
 function mediaUrlsInObject(value, out, depth) {
@@ -1201,7 +1200,7 @@ function capturedStream(capture) {
     return type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4";
   };
   const url = String(stream.url);
-  const result = { url, mime: mimeFor(stream) };
+  const result = { url, mime: mimeFor(stream), label: (sourceLabel(url) + " · " + mediaType(stream).toUpperCase()).slice(0, 48) };
   if (stream.headers && typeof stream.headers === "object") result.headers = stream.headers;
 
   const seen = new Set([url]);
