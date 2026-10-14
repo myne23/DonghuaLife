@@ -51,7 +51,7 @@ assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
 assert.ok(home.some((row) => row.id === 'destacados' && row.title === 'PRUEBA 0.1.18 · Destacados'));
 assert.ok(home.some((row) => row.id === 'catalogo-a' && row.title === 'PRUEBA 0.1.18 · Catálogo A–M'));
 assert.ok(home.some((row) => row.id === 'series' && row.title === 'PRUEBA 0.1.18 · Todas las series'));
-assert.equal(home[0].items[0].title, 'Alpha Donghua');
+assert.equal(home[0].items[0].title, 'Hero Donghua');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref && item.kind === 'series')));
 assert.equal(home.find((row) => row.id === 'destacados').items[0].ref, 'alpha');
 const pageA = await plugin.browse('catalogo-a', '1');
