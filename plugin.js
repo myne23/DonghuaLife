@@ -234,7 +234,7 @@ async function resolveOkru(embedUrl) {
 function normalizeSearch(value) {
   const text = String(value || "").toLowerCase();
   return (typeof text.normalize === "function" ? text.normalize("NFD") : text)
-    .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 export async function search(query) {
@@ -242,7 +242,7 @@ export async function search(query) {
   const term = String((typeof query === "string" ? query : query && (query.q || query.originalTitle || query.title)) || "").trim();
   if (!term) return [];
   const wanted = normalizeSearch(term);
-  const words = wanted.split(/\\s+/).filter(Boolean);
+  const words = wanted.split(/\s+/).filter(Boolean);
   const matches = (item) => {
     const haystack = normalizeSearch(item.title + " " + item.id + " " + item.ref);
     return haystack.includes(wanted) || words.length > 1 && words.every((word) => haystack.includes(word));
@@ -285,18 +285,18 @@ function parseLatestSeries(html) {
   const seen = new Set();
   // La página de últimos episodios enlaza a /watch/, no siempre a la ficha /series/.
   // El slug del episodio corresponde al de la serie antes de los dos números finales.
-  const re = /<a\\b[^>]*href\\s*=\\s*(["'])([^"']*\\/watch\\/[^"']+)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   while ((match = re.exec(html)) && out.length < MAX_PAGE) {
     const url = absolute(match[2]);
     let path = "";
     try { path = new URL(url).pathname; } catch { continue; }
-    const m = /\\/watch\\/([a-z0-9-]+)-(\\d{1,3})-(\\d{1,4})\\/?$/i.exec(path);
+    const m = /\/watch\/([a-z0-9-]+)-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
     if (!m) continue;
     const slug = m[1];
     if (seen.has(slug)) continue;
     const around = html.slice(Math.max(0, match.index - 1800), Math.min(html.length, re.lastIndex + 1800));
-    const imgMatch = /<img\\b[^>]*>/i.exec(around);
+    const imgMatch = /<img\b[^>]*>/i.exec(around);
     const img = imgMatch ? imgMatch[0] : "";
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
     const label = attr(img, "alt") || attr(img, "title") || slug.replace(/-/g, " ");
