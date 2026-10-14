@@ -167,11 +167,12 @@ assert.deepEqual(captured.subtitles,[{lang:'es',url:'https://cdn.example.test/es
 
 delete globalThis.kino.browser;
 
-// Los datos de Next pueden contener una URL R2 directa y un embed Dailymotion.
-// El resolver debe priorizar la fuente directa y conservar el otro servidor como
-// alternativa diferida, que se resuelve solo cuando Kino la selecciona.
+// Los datos de Next pueden contener varias URL directas y embeds de proveedores.
+// Kino debe recibir las URL directas como alternativas nativas y los embeds como
+// referencias diferidas que solo se resuelven cuando la persona las selecciona.
 const nativeSourceUrls = [
   'https://pub-abc.r2.dev/episode/master.m3u8',
+  'https://pub-abc.r2.dev/episode/backup.m3u8',
   'https://www.dailymotion.com/embed/video/x9abcde'
 ];
 const nativeSourceJson = JSON.stringify({sources:nativeSourceUrls.map((url) => ({url}))}).replace(/\//g, '\\/');
@@ -191,9 +192,12 @@ const nativeSourcePlugin = await import('../plugin.js?native-source-resolver-tes
 const nativeSourceStream = await nativeSourcePlugin.resolve('/watch/shrouding-heavens-1-2');
 assert.equal(nativeSourceStream.url, 'https://pub-abc.r2.dev/episode/master.m3u8', 'Debe resolver primero la fuente R2 directa');
 assert.equal(nativeSourceStream.mime, 'application/vnd.apple.mpegurl');
-assert.equal(nativeSourceStream.alternatives.length, 1, 'Debe conservar el servidor Dailymotion como alternativa');
-assert.equal(nativeSourceStream.alternatives[0].label, 'Dailymotion');
-const dailymotionFallback = await nativeSourcePlugin.resolve(nativeSourceStream.alternatives[0].ref);
+assert.equal(nativeSourceStream.alternatives.length, 2, 'Debe conservar la fuente directa y el embed como alternativas');
+assert.equal(nativeSourceStream.alternatives[0].url, 'https://pub-abc.r2.dev/episode/backup.m3u8', 'Las fuentes directas deben enviarse a Kino sin una resolución diferida');
+assert.equal(nativeSourceStream.alternatives[0].mime, 'application/vnd.apple.mpegurl');
+assert.equal(nativeSourceStream.alternatives[0].label, 'R2');
+assert.equal(nativeSourceStream.alternatives[1].label, 'Dailymotion');
+const dailymotionFallback = await nativeSourcePlugin.resolve(nativeSourceStream.alternatives[1].ref);
 assert.equal(dailymotionFallback.url, 'https://pub-abc.r2.dev/episode/dailymotion.m3u8', 'El resolver Dailymotion debe extraer el HLS de sus metadatos públicos');
 assert.equal(dailymotionFallback.mime, 'application/vnd.apple.mpegurl');
 
