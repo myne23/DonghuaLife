@@ -1,7 +1,7 @@
 {
   "id": "donghualife-v3",
   "name": "DonghuaLife",
-  "version": "0.1.37",
+  "version": "0.1.38",
   "apiVersion": 6,
   "entry": "plugin.js",
   "description": "Busca donghua, series de animación china y episodios en DonghuaLife.",
@@ -24,7 +24,29 @@
     "*.vkuser.net",
     "cdnvideo.ru",
     "*.cdnvideo.ru",
-    "beta.donghualife.com"
+    "beta.donghualife.com",
+    "dailymotion.com",
+    "*.dailymotion.com",
+    "dmcdn.net",
+    "*.dmcdn.net",
+    "rumble.com",
+    "*.rumble.com",
+    "odysee.com",
+    "*.odysee.com",
+    "voe.sx",
+    "*.voe.sx",
+    "voe.to",
+    "*.voe.to",
+    "r2.dev",
+    "*.r2.dev",
+    "r2.cloudflarestorage.com",
+    "*.r2.cloudflarestorage.com",
+    "cloudflarestorage.com",
+    "*.cloudflarestorage.com",
+    "cloudflarestream.com",
+    "*.cloudflarestream.com",
+    "videodelivery.net",
+    "*.videodelivery.net"
   ],
   "section": {
     "label": "DonghuaLife"
@@ -35,5 +57,6 @@
     "browse",
     "episodes",
     "resolve"
-  ]
+  ],
+  "browser": "pages"
 }

@@ -135,6 +135,37 @@ assert.equal(episodes.episodes[2].number,3);
 const stream = await plugin.resolve('/watch/alpha-donghua-1-1');
 assert.equal(stream.url,'https://cdn.example.test/video.mp4');
 
+// Cuando el sitio crea el reproductor con JavaScript y no expone el MP4 en HTML,
+// Kino debe usar la captura del navegador y conservar headers/subtítulos.
+globalThis.kino.browser = {
+  async capture(url, options) {
+    assert.equal(url, 'https://donghualife.com/watch/alpha-donghua-1-1');
+    assert.equal(options.autoplay, true);
+    return {
+      finalUrl: url,
+      media: [
+        {url:'https://cdn.example.test/playlist.m3u8',mime:'application/vnd.apple.mpegurl',headers:{Referer:url,'User-Agent':'KinoTest'}},
+        {url:'https://cdn.example.test/low.mp4',mime:'video/mp4',headers:{}}
+      ],
+      subtitles:[{url:'https://cdn.example.test/es.vtt',lang:'es'}]
+    };
+  }
+};
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === 'https://donghualife.com/watch/alpha-donghua-1-1') {
+    return {ok:true,status:200,async text(){return '<html><h1>Player</h1></html>';},async json(){return {};}};
+  }
+  throw new Error('URL inesperada en prueba de captura: ' + url);
+};
+const capturePlugin = await import('../plugin.js?browser-capture-test=1');
+const captured = await capturePlugin.resolve('/watch/alpha-donghua-1-1');
+assert.equal(captured.url,'https://cdn.example.test/playlist.m3u8','La captura debe priorizar HLS frente a MP4');
+assert.equal(captured.mime,'application/vnd.apple.mpegurl');
+assert.equal(captured.headers['User-Agent'],'KinoTest','Debe conservar los headers capturados');
+assert.deepEqual(captured.subtitles,[{lang:'es',url:'https://cdn.example.test/es.vtt',format:'vtt'}]);
+delete globalThis.kino.browser;
+
 globalThis.kino.fetch = async (input) => {
   const url = String(input);
   const body = url.startsWith('https://donghualife.com/watch/')
