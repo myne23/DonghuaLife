@@ -30,6 +30,8 @@ jobs:
               curl -L -sS -o /tmp/donghua-page -w '%{http_code} (%{size_download} bytes)\n' --max-time 20 "https://$host$path" || true
             done
           done
+      - name: Ejecutar pruebas de regresión del plugin
+        run: node test/smoke-test.mjs
       - name: Validar contrato y manifiesto
         run: node kino-sdk/sdk/validate.mjs .
       - name: Probar Inicio con datos reales
