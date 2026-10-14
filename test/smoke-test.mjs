@@ -143,26 +143,33 @@ globalThis.kino.fetch = async (input) => {
 const okStream = await plugin.resolve('/watch/alpha-donghua-1-2');
 assert.equal(okStream.url,'https://v.okcdn.ru/video.mp4');
 
-// El sitio puede devolver los 40 resultados en un único HTML, aunque Kino solo
-// muestre un lote. La paginación debe dividirlo en dos grupos de 20 sin duplicar.
-const overflowMoviesHtml = '<h2>Películas</h2><p>40 películas</p>' +
-  Array.from({length:40}, (_, i) => '<a href="/peliculas/movie-' + (i + 1) + '"><img alt="Movie ' + (i + 1) + '" src="/images/movie-' + (i + 1) + '.jpg"></a>').join('');
+// La página real de películas tiene 40 resultados: 25 en la primera página y 15 en la segunda.
+// La navegación debe respetar las páginas del sitio, sin recortar los primeros 25 a lotes artificiales.
+const overflowMoviesPageOne = '<h2>Películas</h2><p>40 películas</p>' +
+  Array.from({length:25}, (_, i) => '<a href="/peliculas/movie-' + (i + 1) + '"><img alt="Movie ' + (i + 1) + '" src="/images/movie-' + (i + 1) + '.jpg"></a>').join('') +
+  '<a href="/peliculas?page=2">2</a>';
+const overflowMoviesPageTwo = '<h2>Películas</h2><p>40 películas</p>' +
+  Array.from({length:15}, (_, i) => '<a href="/peliculas/movie-' + (i + 26) + '"><img alt="Movie ' + (i + 26) + '" src="/images/movie-' + (i + 26) + '.jpg"></a>').join('') +
+  '<a href="/peliculas?page=1">1</a><a href="/peliculas?page=2">2</a>';
 globalThis.kino.fetch = async (input) => {
   const url = String(input);
   if (url.startsWith('https://donghualife.com/peliculas')) {
-    return {ok:true,status:200,async text(){return overflowMoviesHtml;},async json(){return JSON.parse(overflowMoviesHtml);}};
+    const body = /[?&]page=2/.test(url) ? overflowMoviesPageTwo : overflowMoviesPageOne;
+    return {ok:true,status:200,async text(){return body;},async json(){return JSON.parse(body);}};
   }
-  throw new Error('URL inesperada en prueba de lotes de películas: ' + url);
+  throw new Error('URL inesperada en prueba de paginación real de películas: ' + url);
 };
-const overflowPlugin = await import('../plugin.js?movie-overflow=3');
+const overflowPlugin = await import('../plugin.js?movie-real-pages=1');
 const overflowPage1 = await overflowPlugin.browse('peliculas', null);
-assert.equal(overflowPage1.items.length, 20, 'Películas debe mostrar un lote de 20 aunque el HTML contenga 40');
+assert.equal(overflowPage1.items.length, 25, 'La primera página debe conservar sus 25 películas reales');
 assert.equal(overflowPage1.items[0].title, 'Movie 1');
-assert.ok(overflowPage1.next, 'Debe ofrecer Ver más cuando quedan películas del total');
+assert.equal(overflowPage1.items[24].title, 'Movie 25');
+assert.ok(overflowPage1.next, 'Debe ofrecer Ver más al quedar una segunda página real');
+assert.equal(JSON.parse(overflowPage1.next).page, 2);
 const overflowPage2 = await overflowPlugin.browse('peliculas', overflowPage1.next);
-assert.equal(overflowPage2.items.length, 20, 'El segundo lote debe contener las 20 películas restantes');
-assert.equal(overflowPage2.items[0].title, 'Movie 21', 'La paginación debe continuar tras los primeros 20 sin repetir');
-
+assert.equal(overflowPage2.items.length, 15, 'La segunda página debe conservar sus 15 películas reales');
+assert.equal(overflowPage2.items[0].title, 'Movie 26', 'La segunda página debe continuar después de Movie 25 sin repetir ni saltar');
+assert.equal(overflowPage2.items[14].title, 'Movie 40');
 assert.equal(overflowPage2.next, undefined, 'No debe ofrecer una tercera página cuando ya se alcanzaron las 40 películas');
 
 // La fuente puede devolver HTML 200 de una ficha incompleta desde el catálogo.
