@@ -163,4 +163,26 @@ const overflowPage2 = await overflowPlugin.browse('peliculas', overflowPage1.nex
 assert.equal(overflowPage2.items.length, 20, 'El segundo lote debe contener las 20 películas restantes');
 assert.equal(overflowPage2.items[0].title, 'Movie 21', 'La paginación debe continuar tras los primeros 20 sin repetir');
 assert.equal(overflowPage2.next, undefined, 'No debe ofrecer una tercera página cuando ya se alcanzaron las 40 películas');
-console.log('Prueba simulada correcta: recomendaciones, últimos episodios, tendencias, catálogo, búsqueda, episodios, reproducción y paginación de películas.');
+
+// Si un enlace de catálogo conserva un slug viejo, la ficha se recupera por título
+// y se usa la URL canónica que devuelve la búsqueda global.
+const shroudingDetailHtml = '<h1>Shrouding the Heavens</h1><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/shrouding-heavens-1-1">Capítulo 1</a>';
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === 'https://donghualife.com/series/shrouding-the-heavens') {
+    return {ok:false,status:404,async text(){return '';},async json(){return {};}};
+  }
+  if (url === 'https://donghualife.com/series') {
+    const body = '<a href="/series/shrouding-heavens"><img alt="Shrouding the Heavens" src="/images/shrouding.jpg"></a>';
+    return {ok:true,status:200,async text(){return body;},async json(){return {};}};
+  }
+  if (url === 'https://donghualife.com/series/shrouding-heavens') {
+    return {ok:true,status:200,async text(){return shroudingDetailHtml;},async json(){return {};}};
+  }
+  throw new Error('URL inesperada en prueba de URL canónica: ' + url);
+};
+const aliasPlugin = await import('../plugin.js?catalog-alias=1');
+const shroudingEpisodes = await aliasPlugin.episodes('shrouding-the-heavens');
+assert.equal(shroudingEpisodes.series.title, 'Shrouding the Heavens');
+assert.equal(shroudingEpisodes.episodes.length, 1, 'La ficha canónica debe devolver los capítulos sin error');
+console.log('Prueba simulada correcta: catálogo, búsqueda, episodios, reproducción, paginación de películas y recuperación de fichas con slug antiguo.');
