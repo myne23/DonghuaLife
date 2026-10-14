@@ -1281,7 +1281,7 @@ async function validateCapturedHls(item) {
   try {
     const response = await kino.fetch(String(item.url), {
       headers: item.headers && typeof item.headers === "object" ? item.headers : {},
-      timeoutMs: 3000
+      timeoutMs: 6000
     });
     if (!response.ok) {
       log("Manifiesto HLS rechazado", sourceLabel(item.url), "HTTP", response.status);
@@ -1306,15 +1306,10 @@ async function capturePageStream(url) {
     const capture = await kino.browser.capture(url, { timeoutMs: 18000, autoplay: true });
     const media = Array.isArray(capture && capture.media) ? capture.media : [];
     const filtered = [];
-    let checkedHls = 0;
     for (const item of media) {
       const urlText = String(item && item.url || "");
       const mime = String(item && item.mime || "").toLowerCase();
-      if (/mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(urlText)) {
-        // Límite para no gastar el tiempo de resolución haciendo demasiadas
-        // solicitudes de comprobación: validamos como máximo dos manifiestos.
-        if (checkedHls >= 2) continue;
-        checkedHls++;
+      if (/mpegurl|m3u8/.test(mime) || /\\.m3u8(?:[?#]|$)/i.test(urlText)) {
         if (!await validateCapturedHls(item)) continue;
       }
       filtered.push(item);
