@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.16 usa el identificador `donghualife-v2` para que Kino la trate como una instalación nueva. Las tarjetas de series usan el slug interno como referencia y no la URL completa de la web.
+La versión 0.1.16 usa el identificador `donghualife-v2` y las tarjetas de series usan el slug interno como referencia. La versión 0.1.17 es una compilación de diagnóstico temporal: agrega `DL 0.1.17` a los títulos de las filas de Inicio y a la ficha de serie para comprobar si Kino ejecuta realmente el código actualizado. No se considera una solución funcional hasta confirmar el comportamiento en la app.
 
 ## Estado del desarrollo
 
