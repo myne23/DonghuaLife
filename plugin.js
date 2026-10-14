@@ -1199,7 +1199,7 @@ function addSourceAlternatives(stream, candidates, selectedUrl) {
     const direct = directStream(candidate);
     if (direct && stream && /mpegurl|m3u8/i.test(String(stream.mime || stream.url)) &&
         /^(?:video\/mp4|video\/webm)$/.test(direct.mime) &&
-        safeHostname(candidate) === safeHostname(stream.url)) continue;
+        new URL(candidate).hostname.toLowerCase() === new URL(stream.url).hostname.toLowerCase()) continue;
     // Una URL de video directa no necesita una segunda llamada a resolve().
     // Entregarla como alternativa nativa evita que Kino tenga que volver a
     // interpretar el proveedor y conserva el tipo MIME correcto.
