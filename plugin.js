@@ -449,10 +449,10 @@ export async function home() {
   const featured = (homeItems.length >= 3 ? homeItems : catalog).slice(0, MAX_HOME);
   const split = splitCatalog(catalogHtml || homeHtml);
   const rows = [
-    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.19 · Destacados", genre: "anime", items: featured },
-    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.19 · Catálogo A–M", genre: "anime", items: split.first.slice(0, MAX_HOME) },
-    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.19 · Catálogo N–Z", genre: "anime", items: split.second.slice(0, MAX_HOME) },
-    { id: "series", ref: "series", title: "PRUEBA 0.1.19 · Todas las series", genre: "anime", items: catalog.slice(0, MAX_HOME) }
+    { id: "destacados", ref: "destacados", title: "PRUEBA 0.1.20 · Destacados", genre: "anime", items: featured },
+    { id: "catalogo-a", ref: "catalogo-a", title: "PRUEBA 0.1.20 · Catálogo A–M", genre: "anime", items: split.first.slice(0, MAX_HOME) },
+    { id: "catalogo-b", ref: "catalogo-b", title: "PRUEBA 0.1.20 · Catálogo N–Z", genre: "anime", items: split.second.slice(0, MAX_HOME) },
+    { id: "series", ref: "series", title: "PRUEBA 0.1.20 · Todas las series", genre: "anime", items: catalog.slice(0, MAX_HOME) }
   ].filter((row) => row.items.length > 0);
   if (rows.length > 1) return rows;
 
@@ -460,6 +460,24 @@ export async function home() {
   // presentar un falso Home con una única categoría vacía.
   log("Home de diagnóstico: no se pudieron extraer suficientes fichas del catálogo");
   return rows;
+}
+
+// Sección propia de Kino: aparece como una entrada separada en Inicio
+// (chip en celular y entrada lateral en TV), en vez de depender de la categoría global Anime.
+export async function section({ tab }) {
+  const tabs = [
+    { id: "inicio", label: "Inicio" },
+    { id: "destacados", label: "Destacados" },
+    { id: "catalogo-a", label: "Catálogo A–M" },
+    { id: "catalogo-b", label: "Catálogo N–Z" },
+    { id: "series", label: "Todas las series" }
+  ];
+  const chosen = tabs.some((entry) => entry.id === tab) ? tab : "inicio";
+  const rows = await home();
+  const selectedRows = chosen === "inicio"
+    ? rows
+    : rows.filter((row) => row.id === chosen);
+  return { tabs, tab: chosen, rows: selectedRows };
 }
 
 // Categorías del plugin (API 6): son mosaicos dentro de la pestaña del plugin,
@@ -499,7 +517,7 @@ export async function episodes(ref) {
   const info = parseInfo(html, slug);
   const list = parseEpisodes(html, url);
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
-  info.title = "PRUEBA 0.1.19 · " + info.title;
+  info.title = "PRUEBA 0.1.20 · " + info.title;
   return { series: info, episodes: list };
 }
 
