@@ -1193,7 +1193,7 @@ export async function resolve(ref) {
   const path = String(ref || "");
   if (path.startsWith("source:")) {
     const sourceUrl = absolute(path.slice(7));
-    if (!sourceUrl || !/^https:\\/\\//i.test(sourceUrl)) throw kino.error("not_found", "El servidor de video no es válido");
+    if (!sourceUrl || !/^https:\/\//i.test(sourceUrl)) throw kino.error("not_found", "El servidor de video no es válido");
     try { return await resolveProviderUrl(sourceUrl); }
     catch (error) {
       log("Falló el resolver del servidor " + providerForUrl(sourceUrl), error && error.message || String(error));
@@ -1202,18 +1202,18 @@ export async function resolve(ref) {
   }
 
   let url = absolute(path.startsWith("/") ? path : "/" + path);
-  if (!url || !/^https:\\/\\/donghualife\\.com\\//i.test(url)) {
+  if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
     throw kino.error("not_found", "El episodio o película no es válido");
   }
   let html = await getText(url);
-  if (!/\\/watch\\//i.test(url)) {
-    const watch = /href\\s*=\\s*(["'])([^"']*\\/watch\\/[^"']+)\\1/i.exec(html);
+  if (!/\/watch\//i.test(url)) {
+    const watch = /href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1/i.exec(html);
     if (watch) {
       url = absolute(watch[2], url);
       html = await getText(url);
     }
   }
-  if (/solo\\s+para\\s+vip|requiere\\s+(?:una\\s+)?suscripci[oó]n|inicia\\s+sesi[oó]n\\s+para\\s+ver/i.test(textOf(html))) {
+  if (/solo\s+para\s+vip|requiere\s+(?:una\s+)?suscripci[oó]n|inicia\s+sesi[oó]n\s+para\s+ver/i.test(textOf(html))) {
     throw kino.error("unavailable", "Este episodio requiere acceso en el sitio");
   }
 
@@ -1225,7 +1225,6 @@ export async function resolve(ref) {
     if (stream) return attachAlternatives(stream, candidates, direct.url);
   }
 
-  // Resolver por proveedor: un servidor caído no impide probar los demás.
   const providers = candidates.filter((item) => item.provider && item.provider !== "direct" && item.provider !== "r2");
   if (embed && providerForUrl(embed) && !providers.some((item) => item.url === embed)) {
     providers.unshift({ url: embed, provider: providerForUrl(embed), label: "Servidor alternativo" });
@@ -1242,7 +1241,6 @@ export async function resolve(ref) {
     }
   }
 
-  // Último respaldo para páginas donde el proveedor se construye completamente con JavaScript.
   const captured = await capturePageStream(url);
   if (captured) return attachAlternatives(captured, candidates, url);
   if (!embed && !candidates.length) throw kino.error("unavailable", "La página no publicó fuentes de reproducción reconocibles");
