@@ -37,7 +37,7 @@ jobs:
       - name: Probar Inicio con datos reales y exigir varias filas
         run: |
           node kino-sdk/sdk/run.mjs ./plugin.js home > /tmp/home.json
-          node --input-type=module -e 'import fs from "node:fs"; const rows=JSON.parse(fs.readFileSync("/tmp/home.json","utf8")); const expected=["Últimos Episodios","Tendencias","Series Finalizadas","Películas","Catálogo completo A-Z"]; const actual=Array.isArray(rows)?rows.map(r=>r.title):[]; if (actual.join("|") !== expected.join("|")) { console.error("Orden o categorías de Inicio incorrectos:", actual); process.exit(1); } console.log("Filas reales de Inicio:", actual.join(" | "));'
+          node --input-type=module -e 'import fs from "node:fs"; const rows=JSON.parse(fs.readFileSync("/tmp/home.json","utf8")); const expected=["Últimos Episodios","Tendencias","Series Finalizadas","Películas","Catálogo completo de A-Z"]; const actual=Array.isArray(rows)?rows.map(r=>r.title):[]; if (actual.join("|") !== expected.join("|")) { console.error("Orden o categorías de Inicio incorrectos:", actual); process.exit(1); } console.log("Filas reales de Inicio:", actual.join(" | "));'
       - name: Probar navegación Ver más de Últimos Episodios
         run: node kino-sdk/sdk/run.mjs ./plugin.js browse ultimos-episodios 1
       - name: Probar navegación Ver más de Series Finalizadas
