@@ -142,4 +142,47 @@ globalThis.kino.fetch = async (input) => {
 };
 const okStream = await plugin.resolve('/watch/alpha-donghua-1-2');
 assert.equal(okStream.url,'https://v.okcdn.ru/video.mp4');
-console.log('Prueba simulada correcta: recomendaciones, últimos episodios, estrenos VIP, tendencias, catálogo, búsqueda, episodios y reproducción.');
+
+// El sitio puede devolver los 40 resultados en un único HTML, aunque Kino solo
+// muestre un lote. La paginación debe dividirlo en dos grupos de 20 sin duplicar.
+const overflowMoviesHtml = '<h2>Películas</h2><p>40 películas</p>' +
+  Array.from({length:40}, (_, i) => '<a href="/peliculas/movie-' + (i + 1) + '"><img alt="Movie ' + (i + 1) + '" src="/images/movie-' + (i + 1) + '.jpg"></a>').join('');
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url.startsWith('https://donghualife.com/peliculas')) {
+    return {ok:true,status:200,async text(){return overflowMoviesHtml;},async json(){return JSON.parse(overflowMoviesHtml);}};
+  }
+  throw new Error('URL inesperada en prueba de lotes de películas: ' + url);
+};
+const overflowPlugin = await import('../plugin.js?movie-overflow=3');
+const overflowPage1 = await overflowPlugin.browse('peliculas', null);
+assert.equal(overflowPage1.items.length, 20, 'Películas debe mostrar un lote de 20 aunque el HTML contenga 40');
+assert.equal(overflowPage1.items[0].title, 'Movie 1');
+assert.ok(overflowPage1.next, 'Debe ofrecer Ver más cuando quedan películas del total');
+const overflowPage2 = await overflowPlugin.browse('peliculas', overflowPage1.next);
+assert.equal(overflowPage2.items.length, 20, 'El segundo lote debe contener las 20 películas restantes');
+assert.equal(overflowPage2.items[0].title, 'Movie 21', 'La paginación debe continuar tras los primeros 20 sin repetir');
+assert.equal(overflowPage2.next, undefined, 'No debe ofrecer una tercera página cuando ya se alcanzaron las 40 películas');
+
+// Si un enlace de catálogo conserva un slug viejo, la ficha se recupera por título
+// y se usa la URL canónica que devuelve la búsqueda global.
+const shroudingDetailHtml = '<h1>Shrouding the Heavens</h1><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/shrouding-heavens-1-1">Capítulo 1</a>';
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === 'https://donghualife.com/series/shrouding-the-heavens') {
+    return {ok:false,status:404,async text(){return '';},async json(){return {};}};
+  }
+  if (url === 'https://donghualife.com/series') {
+    const body = '<a href="/series/shrouding-heavens"><img alt="Shrouding the Heavens" src="/images/shrouding.jpg"></a>';
+    return {ok:true,status:200,async text(){return body;},async json(){return {};}};
+  }
+  if (url === 'https://donghualife.com/series/shrouding-heavens') {
+    return {ok:true,status:200,async text(){return shroudingDetailHtml;},async json(){return {};}};
+  }
+  throw new Error('URL inesperada en prueba de URL canónica: ' + url);
+};
+const aliasPlugin = await import('../plugin.js?catalog-alias=1');
+const shroudingEpisodes = await aliasPlugin.episodes('shrouding-the-heavens');
+assert.equal(shroudingEpisodes.series.title, 'Shrouding the Heavens');
+assert.equal(shroudingEpisodes.episodes.length, 1, 'La ficha canónica debe devolver los capítulos sin error');
+console.log('Prueba simulada correcta: catálogo, búsqueda, episodios, reproducción, paginación de películas y recuperación de fichas con slug antiguo.');
