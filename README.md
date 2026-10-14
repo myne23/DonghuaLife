@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.48 conserva las cabeceras de sesión capturadas por el navegador y completa Referer/Origin de Dailymotion cuando faltan, tanto en la fuente principal como en las alternativas.
+La versión 0.1.49 añade diagnóstico seguro de las URL capturadas y del tipo de respuesta del manifiesto HLS (sin registrar URL completas, tokens ni cookies), para distinguir una captura del navegador de una respuesta inválida al reproducir.
 
 ## Estado del desarrollo
 
