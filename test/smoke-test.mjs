@@ -174,7 +174,7 @@ const nativeSourceUrls = [
   'https://pub-abc.r2.dev/episode/master.m3u8',
   'https://www.dailymotion.com/embed/video/x9abcde'
 ];
-const nativeSourceJson = JSON.stringify({sources:nativeSourceUrls.map((url) => ({url}))}).replace(/\\//g, '\\\\/');
+const nativeSourceJson = JSON.stringify({sources:nativeSourceUrls.map((url) => ({url}))}).replace(/\//g, '\\/');
 globalThis.kino.fetch = async (input) => {
   const url = String(input);
   if (url === 'https://donghualife.com/watch/shrouding-heavens-1-2') {
