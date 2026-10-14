@@ -37,7 +37,7 @@ globalThis.kino = {
     fetchCalls.push(url);
     let body = '';
     if (url === 'https://donghualife.com/' || url === 'https://donghualife.com') body = homeHtml;
-    else if (url.startsWith('https://donghualife.com/index.php/')) body = moviesHtml;
+    else if (url.startsWith('https://donghualife.com/movies')) body = moviesHtml;
     else if (url === 'https://donghualife.com/ultimos-episodios') body = latestHtml;
     else if (url.startsWith('https://donghualife.com/series/alpha')) body = seriesHtml;
     else if (url.startsWith('https://donghualife.com/series?')) body = catalogHtml;
