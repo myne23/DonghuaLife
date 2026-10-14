@@ -1185,42 +1185,60 @@ function attachAlternatives(stream, candidates, currentUrl) {
 
 export async function resolve(ref) {
   const path = String(ref || "");
-  let url = absolute(path.startsWith("/") ? path : "/" + path);
-  if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
-    // Las referencias internas de servidor se resuelven solo dentro de la ficha de episodio.
-    if (path.startsWith("source:")) {
-      const sourceUrl = absolute(path.slice(7));
-      if (!sourceUrl || !/^https:\/\//i.test(sourceUrl)) throw kino.error("not_found", "El servidor de video no es válido");
-      const captured = await capturePageStream(sourceUrl);
-      if (captured) return captured;
+  if (path.startsWith("source:")) {
+    const sourceUrl = absolute(path.slice(7));
+    if (!sourceUrl || !/^https:\\/\\//i.test(sourceUrl)) throw kino.error("not_found", "El servidor de video no es válido");
+    try { return await resolveProviderUrl(sourceUrl); }
+    catch (error) {
+      log("Falló el resolver del servidor " + providerForUrl(sourceUrl), error && error.message || String(error));
       throw kino.error("unavailable", "No se pudo obtener video de ese servidor");
     }
+  }
+
+  let url = absolute(path.startsWith("/") ? path : "/" + path);
+  if (!url || !/^https:\\/\\/donghualife\\.com\\//i.test(url)) {
     throw kino.error("not_found", "El episodio o película no es válido");
   }
   let html = await getText(url);
-  if (!/\/watch\//i.test(url)) {
-    const watch = /href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1/i.exec(html);
+  if (!/\\/watch\\//i.test(url)) {
+    const watch = /href\\s*=\\s*(["'])([^"']*\\/watch\\/[^"']+)\\1/i.exec(html);
     if (watch) {
       url = absolute(watch[2], url);
       html = await getText(url);
     }
   }
-  if (/solo\s+para\s+vip|requiere\s+(?:una\s+)?suscripci[oó]n|inicia\s+sesi[oó]n\s+para\s+ver/i.test(textOf(html))) {
+  if (/solo\\s+para\\s+vip|requiere\\s+(?:una\\s+)?suscripci[oó]n|inicia\\s+sesi[oó]n\\s+para\\s+ver/i.test(textOf(html))) {
     throw kino.error("unavailable", "Este episodio requiere acceso en el sitio");
   }
+
+  const candidates = parseSourceCandidates(html, url);
   const embed = parseEmbed(html, url);
-  if (embed && /\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(embed)) {
-    return { url: embed, mime: /\.m3u8(?:[?#]|$)/i.test(embed) ? "application/vnd.apple.mpegurl" : /\.webm(?:[?#]|$)/i.test(embed) ? "video/webm" : "video/mp4" };
+  const direct = candidates.find((item) => item.provider === "direct" || item.provider === "r2");
+  if (direct) {
+    const stream = streamForDirectUrl(direct.url, url);
+    if (stream) return attachAlternatives(stream, candidates, direct.url);
   }
-  if (embed && /ok\.ru\/(?:video|videoembed)\//i.test(embed)) {
-    try { return await resolveOkru(embed); }
-    catch (e) { log("No se pudo resolver OK.ru", e.message); }
+
+  // Resolver por proveedor: un servidor caído no impide probar los demás.
+  const providers = candidates.filter((item) => item.provider && item.provider !== "direct" && item.provider !== "r2");
+  if (embed && providerForUrl(embed) && !providers.some((item) => item.url === embed)) {
+    providers.unshift({ url: embed, provider: providerForUrl(embed), label: "Servidor alternativo" });
   }
-  // La web moderna crea el reproductor y selecciona servidores con JavaScript.
-  // Si el HTML no ofrece un archivo directo o OK.ru, dejamos que Kino abra la ficha
-  // en un navegador oculto y capture la petición real de video (HLS/MP4/DASH compatible).
+  const seen = new Set();
+  for (const candidate of providers) {
+    if (seen.has(candidate.url)) continue;
+    seen.add(candidate.url);
+    try {
+      const stream = await resolveProviderUrl(candidate.url);
+      if (stream) return attachAlternatives(stream, candidates, candidate.url);
+    } catch (error) {
+      log("Falló " + candidate.provider + "; se probará otra fuente", error && error.message || String(error));
+    }
+  }
+
+  // Último respaldo para páginas donde el proveedor se construye completamente con JavaScript.
   const captured = await capturePageStream(url);
-  if (captured) return captured;
-  if (!embed) throw kino.error("unavailable", "La página no mostró una fuente de reproducción reconocida");
-  throw kino.error("unavailable", "No se pudo obtener una fuente directa compatible con Kino");
+  if (captured) return attachAlternatives(captured, candidates, url);
+  if (!embed && !candidates.length) throw kino.error("unavailable", "La página no publicó fuentes de reproducción reconocibles");
+  throw kino.error("unavailable", "No se pudo resolver ningún servidor de video compatible");
 }
