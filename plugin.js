@@ -153,14 +153,15 @@ function parseEpisodes(html, pageUrl) {
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
     if (seen.has(path)) continue;
-    const m = /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
+    // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
+    // /watch/<id>-temporada-1-5. Aceptamos ambos.
+    const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
+      /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
     if (!m) continue;
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
     let label = textOf(match[3]);
     label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
-    // DonghuaLife suele repetir el número en «Capítulo 2 episodio 02».
-    // El enlace tiene el número real: evitamos títulos redundantes.
     if (!label || /cap[ií]tulo|episodio|^\d+$/i.test(label) || label.length > 100) {
       label = "Capítulo " + number;
     } else {
@@ -171,7 +172,6 @@ function parseEpisodes(html, pageUrl) {
   }
   return out.sort((a, b) => a.season - b.season || a.number - b.number);
 }
-
 function parseEmbed(html, pageUrl) {
   const re = /<(?:iframe|video|source)\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*(["'])([^"']+)\1[^>]*>/gi;
   let match;
@@ -292,30 +292,60 @@ function sectionSlice(html, headingPattern, maxChars) {
 function parseLatestSeries(html) {
   const out = [];
   const seen = new Set();
-  // La página de últimos episodios enlaza a /watch/, no siempre a la ficha /series/.
-  // El slug del episodio corresponde al de la serie antes de los dos números finales.
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   while ((match = re.exec(html)) && out.length < MAX_PAGE) {
     const url = absolute(match[2]);
     let path = "";
     try { path = new URL(url).pathname; } catch { continue; }
-    const m = /\/watch\/([a-z0-9-]+)-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
-    if (!m) continue;
-    const slug = m[1];
-    if (seen.has(slug)) continue;
+    // La web pasó a identificadores opacos con el sufijo -temporada-1-5.
+    // Conservamos compatibilidad con el formato anterior titulo-1-5.
+    const routeMatch = /\/watch\/(.+?)-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
+      /\/watch\/(.+?)-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
+    if (!routeMatch) continue;
+
     const around = html.slice(Math.max(0, match.index - 1800), Math.min(html.length, re.lastIndex + 1800));
-    const imgMatch = /<img\b[^>]*>/i.exec(around);
-    const img = imgMatch ? imgMatch[0] : "";
+    const innerImg = /<img\b[^>]*>/i.exec(match[3]);
+    const aroundImg = /<img\b[^>]*>/i.exec(around);
+    const img = innerImg ? innerImg[0] : (aroundImg ? aroundImg[0] : "");
     const posterRaw = attr(img, "data-src") || attr(img, "data-lazy-src") || attr(img, "data-original") || attr(img, "src");
-    const label = attr(img, "alt") || attr(img, "title") || slug.replace(/-/g, " ");
-    out.push({ id: slug, ref: SERIES + "/" + slug, title: textOf(label).slice(0, 200), kind: "series",
-      poster: posterRaw ? absolute(posterRaw) : undefined, backdrop: posterRaw ? absolute(posterRaw) : undefined, genres: ["anime"] });
+
+    const seriesLink = /href\s*=\s*(["'])([^"']*\/series\/[^"']+)\1/i.exec(around);
+    let slug = seriesLink ? slugFromUrl(absolute(seriesLink[2])) : "";
+    let title = attr(img, "alt") || attr(img, "title") || "";
+    if (!title) {
+      const titleAttr = /(?:data-title|aria-label)\s*=\s*(["'])(.*?)\1/i.exec(match[0]);
+      if (titleAttr) title = titleAttr[2];
+    }
+    if (!title) {
+      title = textOf(match[3])
+        .replace(/^\s*EP\s*\d+\s*/i, "")
+        .replace(/\b(?:capítulo|episodio)\s*\d+\b/ig, "")
+        .replace(/\bVIP\b/ig, "")
+        .replace(/\d{1,2}\s+[a-záéíóú]+\s+\d{4}.*$/i, "")
+        .trim();
+    }
+    if (!title) {
+      const heading = /<h[1-4]\b[^>]*>([\s\S]*?)<\/h[1-4]>/i.exec(around);
+      if (heading) title = textOf(heading[1]);
+    }
+    title = textOf(title).replace(/^recomendado\s+/i, "").trim();
+    if (!slug && title) slug = normalizeSearch(title).replace(/\s+/g, "-");
+    if (!slug || !title) continue;
+    if (seen.has(slug)) continue;
+    out.push({
+      id: slug,
+      ref: SERIES + "/" + slug,
+      title: title.slice(0, 200),
+      kind: "series",
+      poster: posterRaw ? absolute(posterRaw) : undefined,
+      backdrop: posterRaw ? absolute(posterRaw) : undefined,
+      genres: ["anime"]
+    });
     seen.add(slug);
   }
   return out;
 }
-
 function parseHomeRows(homeHtml, latestHtml, catalogHtml) {
   const allHome = unique(parseSeries(homeHtml));
   const allCatalog = unique(parseSeries(catalogHtml || ""));
