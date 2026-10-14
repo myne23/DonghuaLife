@@ -306,4 +306,28 @@ assert.equal(seasonFour.episodes.length, 29, 'La temporada 4 debe mostrar solo s
 assert.ok(seasonFour.episodes.every((item) => item.season === 4), 'La temporada 4 no debe mezclar capítulos de otras temporadas');
 assert.equal(seasonFour.seasons.find((item) => item.number === 4).current, true);
 
+// Los servidores publicados en los datos del reproductor deben detectarse sin captura genérica.
+const providerPageUrl = 'https://donghualife.com/watch/provider-resolver-test';
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === providerPageUrl) {
+    const body = '<script>window.sources=[{"name":"R2","url":"https://cdn.r2.dev/episode.m3u8"},{"name":"dailymotion","url":"https://www.dailymotion.com/embed/video/x123abc"}]</script>';
+    return {ok:true,status:200,async text(){return body;},async json(){return JSON.parse(body);}};
+  }
+  if (url === 'https://www.dailymotion.com/player/metadata/video/x123abc') {
+    const body = JSON.stringify({qualities:{auto:[{type:'application/x-mpegURL',url:'https://stream.example.test/master.m3u8'}]}});
+    return {ok:true,status:200,async text(){return body;},async json(){return JSON.parse(body);}};
+  }
+  throw new Error('URL inesperada en prueba de resolvers: ' + url);
+};
+const providerPlugin = await import('../plugin.js?provider-resolver-test=1');
+const providerStream = await providerPlugin.resolve('/watch/provider-resolver-test');
+assert.equal(providerStream.url, 'https://cdn.r2.dev/episode.m3u8', 'Debe priorizar la fuente directa R2 publicada en los datos');
+assert.equal(providerStream.mime, 'application/vnd.apple.mpegurl');
+assert.ok(providerStream.alternatives.some((item) => item.label === 'Dailymotion' && item.ref === 'source:https://www.dailymotion.com/embed/video/x123abc'),
+  'Debe exponer Dailymotion como servidor alternativo de selección diferida');
+const dailyStream = await providerPlugin.resolve('source:https://www.dailymotion.com/embed/video/x123abc');
+assert.equal(dailyStream.url, 'https://stream.example.test/master.m3u8', 'El resolver propio de Dailymotion debe extraer HLS de sus metadatos');
+assert.equal(dailyStream.mime, 'application/vnd.apple.mpegurl');
+
 console.log('Prueba simulada correcta: catálogo, búsqueda, episodios, reproducción, paginación de películas, recuperación de fichas y separación de temporadas.');

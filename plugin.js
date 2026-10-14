@@ -1,5 +1,5 @@
 /// <reference path="./kino.d.ts" />
-// Fuente de donghua para Kino. Usa páginas públicas y fuentes enlazadas por el propio sitio.
+// Fuente de donghua para Kino. Usa páginas públicas y resolvers por proveedor.
 // No intenta saltarse cuentas, CAPTCHA, restricciones de acceso ni reproductores protegidos.
 
 const BASE = "https://donghualife.com";
@@ -272,15 +272,63 @@ function parseEpisodes(html, pageUrl) {
   }
   return out.sort((a, b) => a.season - b.season || a.number - b.number);
 }
+function normalizePlayerMarkup(html) {
+  return decodeHtml(String(html || ""))
+    .replace(/\\u002f/gi, "/").replace(/\\u0026/gi, "&")
+    .replace(/\\u003a/gi, ":").replace(/\\\//g, "/");
+}
+
+function providerForUrl(url) {
+  if (/ok\.ru\/(?:video|videoembed)\//i.test(url)) return "okru";
+  if (/(?:dailymotion\.com|dai\.ly)\//i.test(url)) return "dailymotion";
+  if (/rumble\.com\//i.test(url)) return "rumble";
+  if (/odysee\.com\//i.test(url)) return "odysee";
+  if (/(?:voe\.sx|voe\.to)\//i.test(url)) return "voe";
+  if (/(?:r2\.dev|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)\//i.test(url)) return "r2";
+  return "";
+}
+
+function parseSourceCandidates(html, pageUrl) {
+  const source = normalizePlayerMarkup(html);
+  const out = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const url = absolute(String(raw || "").replace(/&amp;/gi, "&").replace(/[),;}\]]+$/g, ""), pageUrl);
+    if (!/^https:\/\//i.test(url) || seen.has(url)) return;
+    const provider = providerForUrl(url);
+    const direct = /\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(url);
+    if (!provider && !direct) return;
+    seen.add(url);
+    out.push({
+      url,
+      provider: direct ? "direct" : provider,
+      label: provider === "r2" ? "R2 · Directo" : provider === "dailymotion" ? "Dailymotion" :
+        provider === "rumble" ? "Rumble" : provider === "odysee" ? "Odysee" :
+        provider === "voe" ? "Voe" : provider === "okru" ? "OK.ru" : "Video directo"
+    });
+  };
+  const urls = /https?:\/\/[^\s"'<>\\]+/gi;
+  let match;
+  while ((match = urls.exec(source))) add(match[0]);
+  const attrs = /(?:src|data-src|data-url|embedUrl|videoUrl|file|url)\s*[:=]\s*["']([^"']{4,2048})["']/gi;
+  while ((match = attrs.exec(source))) {
+    const value = match[1].replace(/\\\//g, "/");
+    if (/^(?:https?:)?\/\//i.test(value)) add(value.startsWith("//") ? "https:" + value : value);
+  }
+  return out;
+}
+
 function parseEmbed(html, pageUrl) {
+  const candidates = parseSourceCandidates(html, pageUrl);
+  const direct = candidates.find((item) => item.provider === "direct" || item.provider === "r2");
+  if (direct) return direct.url;
   const re = /<(?:iframe|video|source)\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*(["'])([^"']+)\1[^>]*>/gi;
   let match;
-  while ((match = re.exec(html))) {
+  while ((match = re.exec(normalizePlayerMarkup(html)))) {
     const url = absolute(match[2], pageUrl);
-    if (url && (/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url) || /(^|\/\/)([^/]+\.)?ok\.ru\/(?:video|videoembed)\//i.test(url))) return url;
+    if (url && providerForUrl(url)) return url;
   }
-  const raw = /(?:src|file|url)\s*[:=]\s*["']((?:https?:)?\/\/[^"']*(?:ok\.ru|\.m3u8|\.mp4|\.webm)[^"']*)["']/i.exec(html);
-  return raw ? absolute(raw[1], pageUrl) : "";
+  return candidates[0] ? candidates[0].url : "";
 }
 
 function parsePlayerOptions(html) {
@@ -1068,18 +1116,93 @@ async function capturePageStream(url) {
   }
 }
 
+function streamForDirectUrl(url, referer) {
+  if (!url || !/^https:\/\//i.test(url) || !/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url)) return null;
+  const stream = {
+    url,
+    mime: /\.m3u8(?:[?#]|$)/i.test(url) ? "application/vnd.apple.mpegurl" :
+      /\.webm(?:[?#]|$)/i.test(url) ? "video/webm" : "video/mp4"
+  };
+  if (referer) stream.headers = { Referer: referer };
+  return stream;
+}
+
+async function resolveDailymotion(url) {
+  const id = /(?:\/video\/|\/embed\/video\/|[?&]video=)([a-z0-9]+)/i.exec(url) ||
+    /dai\.ly\/([a-z0-9]+)/i.exec(url);
+  if (id) {
+    try {
+      const raw = await getText("https://www.dailymotion.com/player/metadata/video/" + id[1], { headers: { Referer: url } });
+      const data = JSON.parse(raw);
+      const urls = [];
+      const visit = (value) => {
+        if (typeof value === "string") {
+          const candidate = value.replace(/\\\//g, "/");
+          if (/^https:\/\//i.test(candidate) && /\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(candidate)) urls.push(candidate);
+        } else if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === "object") Object.values(value).forEach(visit);
+      };
+      visit(data);
+      const media = urls.find((value) => /\.m3u8(?:[?#]|$)/i.test(value)) || urls[0];
+      if (media) return streamForDirectUrl(media, url);
+    } catch (error) {
+      log("Dailymotion: no se pudieron leer metadatos", error && error.message || String(error));
+    }
+  }
+  const html = await getText(url, { headers: { Referer: "https://www.dailymotion.com/" } });
+  const media = parseSourceCandidates(html, url).find((item) => item.provider === "direct");
+  if (media) return streamForDirectUrl(media.url, url);
+  const captured = await capturePageStream(url);
+  if (captured) return captured;
+  throw new Error("Dailymotion no entregó una fuente directa compatible");
+}
+
+async function resolveProviderUrl(url) {
+  const direct = streamForDirectUrl(url);
+  if (direct) return direct;
+  if (/ok\.ru\/(?:video|videoembed)\//i.test(url)) return resolveOkru(url);
+  if (/(?:dailymotion\.com|dai\.ly)\//i.test(url)) return resolveDailymotion(url);
+  // Rumble, Odysee y Voe tienen su propia página de reproducción y se inspeccionan por separado.
+  const html = await getText(url, { headers: { Referer: BASE + "/" } });
+  const media = parseSourceCandidates(html, url).find((item) => item.provider === "direct");
+  if (media) return streamForDirectUrl(media.url, url);
+  const captured = await capturePageStream(url);
+  if (captured) return captured;
+  throw new Error("El proveedor no publicó video directo");
+}
+
+function attachAlternatives(stream, candidates, currentUrl) {
+  const alternatives = [];
+  const seen = new Set([stream.url]);
+  for (const item of candidates) {
+    if (!item.url || item.url === currentUrl || seen.has(item.url)) continue;
+    seen.add(item.url);
+    if (item.provider === "direct" || item.provider === "r2") {
+      const direct = streamForDirectUrl(item.url, currentUrl);
+      if (direct) alternatives.push({ label: item.label, url: direct.url, mime: direct.mime, headers: direct.headers });
+    } else {
+      alternatives.push({ label: item.label, ref: "source:" + item.url });
+    }
+    if (alternatives.length >= 8) break;
+  }
+  if (alternatives.length) stream.alternatives = alternatives;
+  return stream;
+}
+
 export async function resolve(ref) {
   const path = String(ref || "");
-  let url = absolute(path.startsWith("/") ? path : "/" + path);
-  if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
-    // Las referencias internas de servidor se resuelven solo dentro de la ficha de episodio.
-    if (path.startsWith("source:")) {
-      const sourceUrl = absolute(path.slice(7));
-      if (!sourceUrl || !/^https:\/\//i.test(sourceUrl)) throw kino.error("not_found", "El servidor de video no es válido");
-      const captured = await capturePageStream(sourceUrl);
-      if (captured) return captured;
+  if (path.startsWith("source:")) {
+    const sourceUrl = absolute(path.slice(7));
+    if (!sourceUrl || !/^https:\/\//i.test(sourceUrl)) throw kino.error("not_found", "El servidor de video no es válido");
+    try { return await resolveProviderUrl(sourceUrl); }
+    catch (error) {
+      log("Falló el resolver del servidor " + providerForUrl(sourceUrl), error && error.message || String(error));
       throw kino.error("unavailable", "No se pudo obtener video de ese servidor");
     }
+  }
+
+  let url = absolute(path.startsWith("/") ? path : "/" + path);
+  if (!url || !/^https:\/\/donghualife\.com\//i.test(url)) {
     throw kino.error("not_found", "El episodio o película no es válido");
   }
   let html = await getText(url);
@@ -1093,19 +1216,33 @@ export async function resolve(ref) {
   if (/solo\s+para\s+vip|requiere\s+(?:una\s+)?suscripci[oó]n|inicia\s+sesi[oó]n\s+para\s+ver/i.test(textOf(html))) {
     throw kino.error("unavailable", "Este episodio requiere acceso en el sitio");
   }
+
+  const candidates = parseSourceCandidates(html, url);
   const embed = parseEmbed(html, url);
-  if (embed && /\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(embed)) {
-    return { url: embed, mime: /\.m3u8(?:[?#]|$)/i.test(embed) ? "application/vnd.apple.mpegurl" : /\.webm(?:[?#]|$)/i.test(embed) ? "video/webm" : "video/mp4" };
+  const direct = candidates.find((item) => item.provider === "direct" || item.provider === "r2");
+  if (direct) {
+    const stream = streamForDirectUrl(direct.url, url);
+    if (stream) return attachAlternatives(stream, candidates, direct.url);
   }
-  if (embed && /ok\.ru\/(?:video|videoembed)\//i.test(embed)) {
-    try { return await resolveOkru(embed); }
-    catch (e) { log("No se pudo resolver OK.ru", e.message); }
+
+  const providers = candidates.filter((item) => item.provider && item.provider !== "direct" && item.provider !== "r2");
+  if (embed && providerForUrl(embed) && !providers.some((item) => item.url === embed)) {
+    providers.unshift({ url: embed, provider: providerForUrl(embed), label: "Servidor alternativo" });
   }
-  // La web moderna crea el reproductor y selecciona servidores con JavaScript.
-  // Si el HTML no ofrece un archivo directo o OK.ru, dejamos que Kino abra la ficha
-  // en un navegador oculto y capture la petición real de video (HLS/MP4/DASH compatible).
+  const seen = new Set();
+  for (const candidate of providers) {
+    if (seen.has(candidate.url)) continue;
+    seen.add(candidate.url);
+    try {
+      const stream = await resolveProviderUrl(candidate.url);
+      if (stream) return attachAlternatives(stream, candidates, candidate.url);
+    } catch (error) {
+      log("Falló " + candidate.provider + "; se probará otra fuente", error && error.message || String(error));
+    }
+  }
+
   const captured = await capturePageStream(url);
-  if (captured) return captured;
-  if (!embed) throw kino.error("unavailable", "La página no mostró una fuente de reproducción reconocida");
-  throw kino.error("unavailable", "No se pudo obtener una fuente directa compatible con Kino");
+  if (captured) return attachAlternatives(captured, candidates, url);
+  if (!embed && !candidates.length) throw kino.error("unavailable", "La página no publicó fuentes de reproducción reconocibles");
+  throw kino.error("unavailable", "No se pudo resolver ningún servidor de video compatible");
 }
