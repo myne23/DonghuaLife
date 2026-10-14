@@ -23,7 +23,7 @@ async function getText(url, options) {
     } catch (error) {
       lastError = error;
       if (attempt < 2) {
-        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
         continue;
       }
       throw error;
@@ -31,8 +31,8 @@ async function getText(url, options) {
     if (response.ok) return response.text();
     lastError = new Error("El sitio respondió " + response.status);
     if (![502, 503, 504].includes(response.status) || attempt === 2) throw lastError;
-    // Yield between retries so the next request is not issued in the same microtask turn.
-    await Promise.resolve();
+    // Back off briefly; immediate retries tend to hit the same gateway failure.
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
   }
   throw lastError || new Error("No se pudo leer la página");
 }
