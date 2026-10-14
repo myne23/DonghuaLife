@@ -28,7 +28,7 @@ const moviesHtml = '<h2>Películas</h2><p>2 películas</p><a href="/peliculas/mo
 const moviesPageTwoHtml = '<h2>Películas</h2><p>2 películas</p><a href="/peliculas/movie-two"><img alt="Movie Two" src="/images/movie-two.jpg"></a>';
 const seriesHtml = '<h1>Alpha Donghua</h1><img alt="Alpha Donghua poster" src="/images/alpha.jpg"><h2>Sinopsis</h2><p>Una aventura.</p><a href="/watch/alpha-donghua-1-1">Capítulo 1</a><a href="/watch/alpha-donghua-1-2">Capítulo 2</a><a href="/watch/123e4567-e89b-12d3-a456-426614174000-temporada-1-3">Capítulo 3</a><img alt="Peli Ep 151- 152" src="/images/special.jpg"><a href="/watch/el-inmortal-renegado-temporada-152-1"><span>Capítulo 152</span></a>';
 const directWatch = '<video src="https://cdn.example.test/video.mp4"></video>';
-const metadata = JSON.stringify({videos:[{name:'hd',url:'https://v.okcdn.ru/video.mp4'}]});
+const metadata = JSON.stringify({videos:[{name:'hd',url:'https://v.okcdn.ru/video.mp4'},{name:'sd',url:'https://v.okcdn.ru/video-sd.mp4'}]});
 const playerOptions = JSON.stringify({flashvars:{metadata}}).replace(/"/g,'&quot;');
 const okHtml = '<div data-options="' + playerOptions + '"></div>';
 
@@ -206,7 +206,7 @@ assert.equal(nativeSourceStream.mime, 'application/vnd.apple.mpegurl');
 assert.equal(nativeSourceStream.alternatives.length, 3, 'Debe conservar las fuentes directas y los embeds como alternativas');
 assert.equal(nativeSourceStream.alternatives[0].url, 'https://pub-abc.r2.dev/episode/backup.m3u8', 'Las fuentes directas deben enviarse a Kino sin una resolución diferida');
 assert.equal(nativeSourceStream.alternatives[0].mime, 'application/vnd.apple.mpegurl');
-assert.equal(nativeSourceStream.alternatives[0].label, 'R2');
+assert.equal(nativeSourceStream.alternatives[0].label, 'R2 · HLS');
 assert.equal(nativeSourceStream.alternatives[1].label, 'Dailymotion');
 assert.equal(nativeSourceStream.alternatives[2].label, 'Rumble');
 const rumbleFallback = await nativeSourcePlugin.resolve(nativeSourceStream.alternatives[2].ref);
@@ -226,6 +226,10 @@ globalThis.kino.fetch = async (input) => {
 };
 const okStream = await plugin.resolve('/watch/alpha-donghua-1-2');
 assert.equal(okStream.url,'https://v.okcdn.ru/video.mp4');
+assert.equal(okStream.label,'OK.ru · hd');
+assert.equal(okStream.alternatives.length,1,'Debe conservar las calidades alternativas de OK.ru');
+assert.equal(okStream.alternatives[0].url,'https://v.okcdn.ru/video-sd.mp4');
+assert.equal(okStream.alternatives[0].label,'OK.ru · sd');
 
 // La página real de películas tiene 40 resultados: 25 en la primera página y 15 en la segunda.
 // La navegación debe respetar las páginas del sitio, sin recortar los primeros 25 a lotes artificiales.
