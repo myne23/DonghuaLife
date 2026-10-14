@@ -196,6 +196,7 @@ function parseEpisodes(html, pageUrl) {
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
     const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
       /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
+    if (!m) continue;
 
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
