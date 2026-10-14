@@ -197,7 +197,10 @@ function parseEpisodes(html, pageUrl) {
 
     const season = Number(m[1]), number = Number(m[2]);
     if (season < 1 || number < 1) continue;
-    let label = textOf(match[3]);
+    const innerImage = /<img\b[^>]*>/i.exec(match[3]);
+    let label = textOf(match[3]) ||
+      (innerImage ? (attr(innerImage[0], "alt") || attr(innerImage[0], "title")) : "") ||
+      attr(match[0], "aria-label") || attr(match[0], "title");
     label = label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
     const specialMovie = /^peli\s*ep\s*\d+\s*-\s*\d+$/i.test(label);
     if (specialMovie) {
