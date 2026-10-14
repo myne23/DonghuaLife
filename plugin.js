@@ -526,14 +526,6 @@ function mapToCatalog(parsed, catalog) {
   return result;
 }
 
-function sourcePagedResult(items, page, previous, html) {
-  const result = pagedResult(items, page, previous);
-  if (!result.items.length || !hasNextPage(html, page)) {
-    delete result.next;
-  }
-  return result;
-}
-
 export async function home() {
   let homeHtml = "";
   let catalogHtml = "";
