@@ -1274,52 +1274,21 @@ function capturedStream(capture) {
   return result;
 }
 
-async function validateCapturedHls(item) {
-  // Kino a veces captura una URL .m3u8 que en realidad devuelve una página de
-  // error o un texto de bloqueo. Detectarlo antes de entregarla evita el error
-  // de manifiesto malformado y permite probar otra fuente capturada.
-  try {
-    const response = await kino.fetch(String(item.url), {
-      headers: item.headers && typeof item.headers === "object" ? item.headers : {},
-      timeoutMs: 6000
-    });
-    if (!response.ok) {
-      log("Manifiesto HLS rechazado", sourceLabel(item.url), "HTTP", response.status);
-      return false;
-    }
-    const body = String(await response.text() || "").replace(/^\uFEFF/, "").trimStart();
-    if (!/^#EXTM3U(?:\s|$)/i.test(body)) {
-      log("Manifiesto HLS rechazado", sourceLabel(item.url), "respuesta no HLS");
-      return false;
-    }
-  } catch (error) {
-    // Si Kino no puede inspeccionar el manifiesto por un límite de red del
-    // runtime, no descartamos la fuente: el reproductor podría sí acceder.
-    log("No se pudo validar el manifiesto HLS", sourceLabel(item.url), error && error.message || String(error));
-  }
-  return true;
-}
-
 async function capturePageStream(url) {
   if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   try {
     const capture = await kino.browser.capture(url, { timeoutMs: 18000, autoplay: true });
-    const media = Array.isArray(capture && capture.media) ? capture.media : [];
-    const filtered = [];
-    for (const item of media) {
-      const urlText = String(item && item.url || "");
-      const mime = String(item && item.mime || "").toLowerCase();
-      if (/mpegurl|m3u8/.test(mime) || /\\.m3u8(?:[?#]|$)/i.test(urlText)) {
-        if (!await validateCapturedHls(item)) continue;
-      }
-      filtered.push(item);
-    }
-    const stream = capturedStream({ ...capture, media: filtered });
+    // No validamos HLS con kino.fetch: esa petición puede recibir HTML/JSON
+    // distinto de lo que obtuvo el navegador integrado y descartar fuentes válidas.
+    const stream = capturedStream(capture);
     if (stream) {
       let host = "desconocido";
       try { host = new URL(stream.url).hostname; } catch {}
       log("Fuente capturada", host, stream.mime, "alternativas:", Array.isArray(stream.alternatives) ? stream.alternatives.length : 0);
-    } else log("El navegador integrado no detectó una fuente de video compatible");
+    } else {
+      const media = Array.isArray(capture && capture.media) ? capture.media.length : 0;
+      log("El navegador integrado capturó", media, "recursos, pero ninguno parece una fuente de video compatible");
+    }
     return stream;
   } catch (error) {
     log("No se pudo capturar el reproductor web", error && error.message || String(error));
