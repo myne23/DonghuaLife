@@ -1519,7 +1519,14 @@ export async function resolve(ref) {
   const candidates = extractSourceCandidates(html, url);
   for (const candidate of candidates) {
     const stream = await resolveProviderUrl(candidate, url, false);
-    if (stream) return addSourceAlternatives(stream, candidates, candidate);
+    if (stream) {
+      try {
+        if (new URL(candidate).hostname.toLowerCase() === "videos.donghualife.com") {
+          log("Fuente R2 resuelta desde HTML/JSON público, sin captura de red");
+        }
+      } catch {}
+      return addSourceAlternatives(stream, candidates, candidate);
+    }
   }
   // Si el proveedor no expone metadatos directos, probamos su reproductor individual.
   for (const candidate of candidates) {
