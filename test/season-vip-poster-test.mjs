@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 
 const seriesUrl = "https://donghualife.com/series/vip-show";
+const spareUrl = "https://donghualife.com/series/spare-me-great-lord";
+const spareEpisodeBase = "/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-";
+const spareHtml = '<html><h1>Spare Me, Great Lord!</h1><p>2 temporadas</p>' +
+  '<a href="/watch/spare-me-great-lord-1-1">Capítulo 1</a>' +
+  '<div class="episode-card"><a href="' + spareEpisodeBase + '4">Capítulo 4</a></div><span class="vip-badge">VIP</span>' +
+  '</html>';
+const spareSeasonThreeHtml = '<html><h1>Spare Me, Great Lord!</h1><p>Temporada 3</p>' +
+  [1,2,3].map(n => '<div class="episode-card"><a href="' + spareEpisodeBase + n + '">Capítulo ' + n + '</a></div>').join("") +
+  '<div class="episode-card"><a href="' + spareEpisodeBase + '4">Capítulo 4VIP</a></div></html>';
 const seriesHtml = '<html><head><meta property="og:image" content="/images/series.jpg"></head>' +
   '<h1>VIP Show</h1><p>4 Temporadas</p>' +
   [1,2,3,4].map(n => '<a href="/series/vip-show"><div class="season-card"><img alt="Portada ' + n + '" src="/images/season-' + n + '.jpg"><span>Temporada ' + n + '</span></div></a>').join("") +
@@ -18,6 +27,13 @@ globalThis.kino = {
   async fetch(input) {
     const url = String(input);
     if (url === seriesUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return seriesHtml;}};
+    if (url === spareUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return spareHtml;}};
+    if (url.includes("/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-1")) {
+      return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return spareSeasonThreeHtml;}};
+    }
+    if (url.includes("/watch/spare-me-great-lord-1-1")) {
+      return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return '<h1>Spare Me, Great Lord!</h1><a href="/watch/spare-me-great-lord-1-1">Capítulo 1</a>';}};
+    }
     const match = /\/watch\/vip-show-(\d+)-(\d+)$/.exec(new URL(url).pathname);
     if (match) {
       const season = Number(match[1]), episode = Number(match[2]);
@@ -42,4 +58,12 @@ assert.equal(first.series.poster, "https://donghualife.com/images/season-1.jpg",
 const fourth = await plugin.episodes(first.seasons[3].ref);
 assert.deepEqual(fourth.episodes.map(episode => episode.number), [1], "La temporada seleccionada debe devolver solo sus episodios");
 assert.equal(fourth.series.poster, "https://donghualife.com/images/season-4.jpg", "La portada debe cambiar al seleccionar la temporada 4");
-console.log("Temporadas: excluye episodios VIP y cambia la portada según la temporada seleccionada.");
+
+// Regresión: ficha con contador desactualizado y rutas UUID distintas en T3.
+const spare = await plugin.episodes("spare-me-great-lord");
+const spareThirdRef = spare.seasons.find(season => season.number === 3)?.ref;
+assert.ok(spareThirdRef, "Debe detectar la temporada 3 aunque la ficha diga que hay solo dos");
+const spareThird = await plugin.episodes(spareThirdRef);
+assert.deepEqual(spareThird.episodes.map(episode => episode.number), [1,2,3],
+  "Debe usar la URL de T3 para recuperar los capítulos públicos y excluir el 4 VIP");
+console.log("Temporadas: excluye episodios VIP, detecta temporadas con metadatos desactualizados y usa rutas por temporada.");
