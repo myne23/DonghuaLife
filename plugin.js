@@ -1083,17 +1083,17 @@ function sourceLabel(value) {
 
 function diagnosePlayerHints(html) {
   const source = String(html || "");
-  const scripts = source.match(/<script\\b/gi) || [];
+  const scripts = source.match(/<script\b/gi) || [];
   const hint = (pattern) => pattern.test(source);
   return {
     htmlChars: source.length,
     scripts: scripts.length,
-    hasR2Host: hint(/videos\\.donghualife\\.com/i),
+    hasR2Host: hint(/videos\.donghualife\.com/i),
     hasM3u8Text: hint(/m3u8|mpegurl/i),
-    hasR2Text: hint(/\\br2\\b|cloudflare.?r2/i),
+    hasR2Text: hint(/\br2\b|cloudflare.?r2/i),
     hasPlayerText: hint(/player|playback|stream|source|videoUrl|video_url/i),
     hasIframeText: hint(/iframe|data-options|data-player|embedUrl|embed_url/i),
-    hasNextData: hint(/__NEXT_DATA__|self\\.__next_f|next\\/static/i)
+    hasNextData: hint(/__NEXT_DATA__|self\.__next_f|next\/static/i)
   };
 }
 
