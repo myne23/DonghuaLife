@@ -1733,18 +1733,12 @@ async function readNativeHlsSubtitles(masterUrl) {
 }
 
 async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
-  const headers = {
-    Accept: "application/json,*/*",
-    Referer: pageUrl,
-    Origin: BASE
-  };
+  const headers = { Accept: "application/json,*/*", Referer: pageUrl, Origin: BASE };
   const found = [];
   const tracks = [];
   if (episodeId) {
     try {
-      const response = await kino.fetch(BASE + "/api/subtitles?episodeId=" + encodeURIComponent(episodeId), {
-        headers, timeoutMs: 7000
-      });
+      const response = await kino.fetch(BASE + "/api/subtitles?episodeId=" + encodeURIComponent(episodeId), { headers, timeoutMs: 7000 });
       if (response.ok) {
         const json = response.json();
         if (Array.isArray(json && json.subtitles)) tracks.push(...json.subtitles.slice(0, 10));
@@ -1755,40 +1749,35 @@ async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
   }
   for (const source of sourceRecords || []) {
     for (const id of source.uuids || []) {
-      if (typeof id === "string" && /^[0-9a-f-]{32,36}$/i.test(id) &&
-          !tracks.some((track) => track && String(track.id || track.uuid || "") === id)) {
+      if (typeof id === "string" && /^[0-9a-f-]{32,36}$/i.test(id) && !tracks.some((track) => track && String(track.id || track.uuid || "") === id)) {
         tracks.push({ id, language: "es" });
       }
     }
   }
   for (const track of tracks.slice(0, 15)) {
-      if (!track || typeof track !== "object") continue;
-      const label = String(track.language || track.label || "es");
-      const url = [track.url, track.src, track.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
-      if (url && subtitleFormat(url)) found.push({ lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : label.slice(0, 16), url, format: subtitleFormat(url) });
-      const id = String(track.id || track.uuid || "");
-      if (!url && /^[0-9a-f-]{32,36}$/i.test(id)) {
-        try {
-          const detail = await kino.fetch(BASE + "/api/subtitles/" + id, { headers, timeoutMs: 5000 });
-          if (!detail.ok) continue;
-          const body = detail.text().trim();
-          let detailJson = null;
-          try { detailJson = JSON.parse(body); } catch {}
-          const direct = detailJson && [detailJson.url, detailJson.src, detailJson.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
-          if (direct && subtitleFormat(direct)) found.push({ lang: /^(es|spa|spanish|español)/i.test(String(detailJson.language || label)) ? "es" : label.slice(0, 16), url: direct, format: subtitleFormat(direct) });
-          // Kino's stream contract accepts remote VTT/SRT URLs, not inline ASS/SRT bodies.
-          // Do not advertise the JSON endpoint as if its response were a subtitle file.
-          if (detailJson && typeof detailJson.content === "string" &&
-              /^(?:WEBVTT|[\s\S]*?-->|\[Script Info\])/i.test(detailJson.content.trimStart())) {
-            log("La API R2 entregó subtítulos en contenido inline; Kino solo puede adjuntar pistas con URL pública");
-          }
-        } catch (error) {
-          log("No se pudo consultar una pista R2", String(error && error.message || error).slice(0, 80));
-        }
-      }
+    if (!track || typeof track !== "object") continue;
+    const label = String(track.language || track.label || "es");
+    const url = [track.url, track.src, track.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
+    if (url && subtitleFormat(url)) {
+      found.push({ lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : label.slice(0, 16), url, format: subtitleFormat(url) });
+      continue;
     }
-  } catch (error) {
-    log("No se pudo consultar la API de subtítulos R2", String(error && error.message || error).slice(0, 100));
+    const id = String(track.id || track.uuid || "");
+    if (!/^[0-9a-f-]{32,36}$/i.test(id)) continue;
+    try {
+      const detail = await kino.fetch(BASE + "/api/subtitles/" + id, { headers, timeoutMs: 5000 });
+      if (!detail.ok) continue;
+      const body = detail.text().trim();
+      let detailJson = null;
+      try { detailJson = JSON.parse(body); } catch {}
+      const direct = detailJson && [detailJson.url, detailJson.src, detailJson.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
+      if (direct && subtitleFormat(direct)) found.push({ lang: /^(es|spa|spanish|español)/i.test(String(detailJson.language || label)) ? "es" : label.slice(0, 16), url: direct, format: subtitleFormat(direct) });
+      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\s\S]*?-->|\[Script Info\])/i.test(detailJson.content.trimStart())) {
+        log("La API R2 entregó subtítulos inline; Kino necesita una URL pública VTT/SRT");
+      }
+    } catch (error) {
+      log("No se pudo consultar una pista R2", String(error && error.message || error).slice(0, 80));
+    }
   }
   return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index).slice(0, 10);
 }
