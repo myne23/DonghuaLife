@@ -293,7 +293,13 @@ function parseEpisodes(html, pageUrl) {
   while ((match = re.exec(html)) && out.length < 2000) {
     const previousEpisodeEnd = previousWatchEnd;
     previousWatchEnd = re.lastIndex;
-    const beforeLink = html.slice(Math.max(previousEpisodeEnd, match.index - 900), match.index);
+    const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 900), match.index);
+    // Si el badge anterior cerraba la tarjeta previa, no debe contaminar el episodio actual.
+    const blockClosers = /<\/(?:div|li|article|section|ul|ol)\s*>/gi;
+    let blockCloser;
+    let lastBlockEnd = -1;
+    while ((blockCloser = blockClosers.exec(precedingMarkup))) lastBlockEnd = blockClosers.lastIndex;
+    const beforeLink = precedingMarkup.slice(lastBlockEnd >= 0 ? lastBlockEnd : 0);
     const url = absolute(match[2], pageUrl);
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
