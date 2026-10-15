@@ -1461,7 +1461,7 @@ async function resolveOdysee(providerUrl) {
 }
 
 async function resolveProviderUrl(providerUrl, referer, allowCapture) {
-  if (/^https:\/\/(?:www\.)?odysee\.com\//i.test(providerUrl)) {
+  if (allowCapture && /^https:\/\/(?:www\.)?odysee\.com\//i.test(providerUrl)) {
     const odysee = await resolveOdysee(providerUrl);
     if (odysee) return odysee;
   }
