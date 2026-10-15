@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:smoke": "node test/smoke-test.mjs"
+    "test:smoke": "node test/smoke-test.mjs && node test/r2-native-resolver-test.mjs && node test/r2-subtitle-diagnostics-test.mjs"
   }
 }
