@@ -1920,7 +1920,7 @@ async function resolveNativePlayerSources(html, pageUrl) {
     for (const item of usable) {
       if (item === selected || alternatives.length >= 8) continue;
       const alternate = item.stream;
-      if (!alternate || typeof alternate.url !== "string" || !/^https:\\/\\//i.test(alternate.url) || seen.has(alternate.url)) continue;
+      if (!alternate || typeof alternate.url !== "string" || !/^https:\/\/\//i.test(alternate.url) || seen.has(alternate.url)) continue;
       seen.add(alternate.url);
       const kind = /mpegurl|m3u8/i.test(String(alternate.mime || alternate.url)) ? "HLS" :
         /webm/i.test(String(alternate.mime || alternate.url)) ? "WEBM" :
