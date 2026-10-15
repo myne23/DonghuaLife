@@ -316,12 +316,15 @@ function parseEpisodes(html, pageUrl) {
     const afterLink = nextEpisodeLink ? tail.slice(0, nextEpisodeLink.index) : tail.slice(0, 260);
     // El distintivo VIP también puede estar antes del enlace, dentro de la tarjeta,
     // o indicado solo por una clase/atributo (sin texto visible).
+    const afterLinkVipAt = afterLink.search(/VIP/i);
+    const beforeNextCard = afterLinkVipAt >= 0 && /<(?:div|li|article|section)\b[^>]*(?:episode|chapter|card|item|grid)/i.test(afterLink.slice(0, afterLinkVipAt));
+    const afterLinkVip = beforeNextCard ? "" : afterLink;
     const vipContext = [
       linkLabel, imageLabelForVip,
       attr(match[0], "class"), attr(match[0], "id"),
       attr(match[0], "aria-label"), attr(match[0], "title"),
       attr(match[0], "data-label"), attr(match[0], "data-title"),
-      afterLink
+      afterLinkVip
     ].join(" ");
     // En el prefijo solo aceptamos marcadores VIP estructurales o una insignia
     // cuyo texto sea exactamente «VIP»; no el nombre de la serie (p. ej. «VIP Show»).
