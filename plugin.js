@@ -1469,16 +1469,16 @@ function capturedStream(capture) {
       !/^access-control-request-/i.test(key) && typeof value === "string"
     ));
     const hasHeader = (name) => Object.keys(headers).some((key) => key.toLowerCase() === name);
-    if (/(^|\\.)dailymotion\\.com$/i.test(host)) {
+    if (/(^|\.)dailymotion\.com$/i.test(host)) {
       if (!hasHeader("referer")) headers.Referer = "https://www.dailymotion.com/";
       if (!hasHeader("origin")) headers.Origin = "https://www.dailymotion.com";
     }
-    if (/(^|\\.)odycdn\\.com$/i.test(host) || /(^|\\.)odysee\\.com$/i.test(host)) {
+    if (/(^|\.)odycdn\.com$/i.test(host) || /(^|\.)odysee\.com$/i.test(host)) {
       if (!hasHeader("referer")) headers.Referer = "https://odysee.com/";
       if (!hasHeader("origin")) headers.Origin = "https://odysee.com";
     }
     const removed = Object.keys(captured).filter((key) => /^access-control-request-/i.test(key)).length;
-    if (removed && /(^|\\.)odycdn\\.com$/i.test(host)) {
+    if (removed && /(^|\.)odycdn\.com$/i.test(host)) {
       log("Se filtraron cabeceras de preflight para reproducción Odysee", "eliminadas=" + removed);
     }
     return headers;
