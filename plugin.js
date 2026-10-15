@@ -2239,6 +2239,20 @@ async function resolveNativePlayerSources(html, pageUrl) {
       }
       if (!stream) return null;
 
+      // Aplicar la normalización Odysee también cuando directStream no reconoce
+      // la URL inicialmente y resolveProviderUrl la convierte en un stream genérico.
+      // Antes, esa ruta se saltaba las pruebas /v6 y conservaba /api/v3/streams/free.
+      const sourceProviderKey = String(source.provider || source.label || "").toLowerCase();
+      if (sourceProviderKey.includes("odysee") && stream && /^https:\/\//i.test(String(stream.url || ""))) {
+        try {
+          if (/(^|\.)odycdn\.com$/i.test(new URL(stream.url).hostname)) {
+            stream = await resolveOdyseeDirectMedia(stream.url, stream);
+          }
+        } catch (error) {
+          log("No se pudo normalizar el stream Odysee resuelto", String(error && error.message || error).slice(0, 90));
+        }
+      }
+
       // La API propia puede devolver una URL de Odysee alojada en un CDN distinto
       // de odycdn.com. Usamos el proveedor del payload para conservar el contexto
       // del embed incluso cuando el hostname del archivo es diferente.
