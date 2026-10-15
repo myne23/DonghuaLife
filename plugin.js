@@ -1374,15 +1374,17 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
   const headers = { Accept: "*/*", Referer: "https://odysee.com/", Origin: "https://odysee.com" };
   const candidates = [{ url: original.href, reason: "capturado", type: /\.m3u8(?:[?#]|$)/i.test(original.pathname) ? "hls" : "mp4" }];
 
-  // El endpoint /api/v3/streams/free suele exponer claim y sd_hash en el path.
-  // Probamos la ruta pública /v6 que usa el resolvedor nativo para videos públicos.
-  const legacy = /^\/api\/v[34]\/streams\/free\/([^/]+)\/([^/]+)\/[^/]+$/i.exec(original.pathname);
+  // El formato legado es /api/v3/streams/free/{name}/{claim_id}/{sd_hash_prefix}.mp4.
+  // V6 requiere el claim_id (segmento 2) y el prefijo del sd_hash (nombre del archivo),
+  // no el nombre/slug ni el hash de 40 caracteres del segmento anterior.
+  const legacy = /^\/api\/v[34]\/streams\/free\/([^/]+)\/([^/]+)\/([^/]+)\.(?:mp4|webm)$/i.exec(original.pathname);
   if (legacy) {
-    const claimId = legacy[1], sdHash = legacy[2];
-    candidates.unshift(
-      { url: "https://player.odycdn.com/v6/streams/" + encodeURIComponent(claimId) + "/" + encodeURIComponent(sdHash) + ".mp4", reason: "v6-mp4", type: "mp4" },
-      { url: "https://player.odycdn.com/v6/streams/" + encodeURIComponent(claimId) + "/" + encodeURIComponent(sdHash) + "/master.m3u8", reason: "v6-hls", type: "hls" }
-    );
+    const claimId = legacy[2], sdHashPrefix = legacy[3];
+    candidates.unshift({
+      url: "https://player.odycdn.com/v6/streams/" + encodeURIComponent(claimId) + "/" + encodeURIComponent(sdHashPrefix) + ".mp4",
+      reason: "v6-mp4",
+      type: "mp4"
+    });
   }
 
   let lastStatus = 0;
