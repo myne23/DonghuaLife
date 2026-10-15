@@ -1,7 +1,7 @@
 {
   "id": "donghualife-v3",
   "name": "DonghuaLife",
-  "version": "0.1.56",
+  "version": "0.1.57",
   "apiVersion": 6,
   "entry": "plugin.js",
   "description": "Busca donghua, series de animación china y episodios en DonghuaLife.",
@@ -11,6 +11,7 @@
   "icon": "icon.png",
   "hosts": [
     "donghualife.com",
+    "videos.donghualife.com",
     "www.donghualife.com",
     "ok.ru",
     "*.ok.ru",

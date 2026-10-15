@@ -1063,7 +1063,7 @@ function isDirectMediaUrl(value) {
 function sourceHostAllowed(value) {
   try {
     const host = new URL(value).hostname.toLowerCase();
-    return /(?:^|\.)(?:dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|vk\.com|vkvideo\.ru|doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
+    return /(?:^|\.)(?:videos\.donghualife\.com|dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|vk\.com|vkvideo\.ru|doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
   } catch { return false; }
 }
 
@@ -1071,6 +1071,7 @@ function sourceLabel(value) {
   try {
     const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
     if (host.includes("dailymotion") || host === "dai.ly") return "Dailymotion";
+    if (host === "videos.donghualife.com") return "R2";
     if (host.includes("rumble")) return "Rumble";
     if (host.includes("odysee")) return "Odysee";
     if (host.includes("voe.")) return "Voe";
@@ -1115,6 +1116,9 @@ function directStream(url) {
     const host = new URL(url).hostname.toLowerCase();
     if (/(^|\.)dailymotion\.com$/.test(host)) {
       result.headers = { Referer: "https://www.dailymotion.com/", Origin: "https://www.dailymotion.com" };
+    }
+    if (host === "videos.donghualife.com") {
+      result.headers = { Referer: "https://donghualife.com/", Origin: "https://donghualife.com" };
     }
   } catch {}
   return result;
