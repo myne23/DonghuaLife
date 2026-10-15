@@ -1371,26 +1371,89 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
   try { original = new URL(mediaUrl); } catch { return stream; }
   if (!/(^|\.)odycdn\.com$/i.test(original.hostname)) return stream;
 
-  // El reproductor web de Odysee solicita el archivo en rangos (HTTP 206) y
-  // puede usar estado/cookies de su navegador. Una comprobación independiente
-  // con kino.fetch puede recibir 401/429 aunque la URL funcione en el reproductor,
-  // además de consumir peticiones y provocar rate limiting. No hacer preflight:
-  // conservar exactamente la URL capturada y dejar que el reproductor pida rangos.
   const headers = {
     ...(stream && stream.headers || {}),
     Accept: "*/*",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
     Referer: "https://odysee.com/",
     Origin: "https://odysee.com"
   };
   const type = /\.m3u8(?:[?#]|$)/i.test(original.href) ? "hls" :
     /\.webm(?:[?#]|$)/i.test(original.pathname) ? "webm" : "mp4";
-  log("Odysee: se conserva URL capturada sin preflight", "tipo=" + type,
-    "path=" + original.pathname.slice(0, 100));
+
+  // Odysee's own clients prefer get(...).result.streaming_url over guessing a
+  // CDN URL. DonghuaLife sometimes gives us only /api/v3/streams/free/{name}/{claim_id}/...
+  // Ask the official SDK proxy for the canonical playback URL before falling back
+  // to the captured URL. Never preflight the media URL itself: range requests can
+  // return 401/429 to kino.fetch even when the native player can play them.
+  let playbackUrl = original.href;
+  const pathMatch = /^\/api\/v[34]\/streams\/free\/([^/]+)\/([a-f0-9]{40})(?:\/|$)/i.exec(original.pathname);
+  if (pathMatch) {
+    let name = pathMatch[1];
+    try { name = decodeURIComponent(name); } catch {}
+    const uri = "lbry://" + name + "#" + pathMatch[2];
+    const apiHeaders = {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": headers["User-Agent"],
+      "Referer": "https://odysee.com/",
+      "Origin": "https://odysee.com"
+    };
+    let waitMs = 500;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await kino.fetch("https://api.na-backend.odysee.com/api/v1/proxy?m=get", {
+          method: "POST",
+          headers: apiHeaders,
+          body: JSON.stringify({ jsonrpc: "2.0", method: "get", params: { uri, environment: "live" } }),
+          timeoutMs: 8000
+        });
+        if (response.ok) {
+          const data = JSON.parse(response.text());
+          const candidate = data && !data.error && data.result && data.result.streaming_url;
+          if (typeof candidate === "string" && /^https:\/\//i.test(candidate)) {
+            let candidateUrl;
+            try { candidateUrl = new URL(candidate); } catch {}
+            if (candidateUrl && /(^|\.)odycdn\.com$/i.test(candidateUrl.hostname)) {
+              playbackUrl = candidateUrl.href;
+              log("Odysee API get: streaming_url oficial encontrada", "tipo=" + type,
+                "urlDistinta=" + (playbackUrl !== original.href));
+            } else {
+              log("Odysee API get: streaming_url con host inesperado; se conserva URL de origen");
+            }
+          } else {
+            log("Odysee API get: sin streaming_url; se conserva URL de origen");
+          }
+          break;
+        }
+        if (![429, 502, 503].includes(response.status)) {
+          log("Odysee API get: HTTP " + response.status + "; se conserva URL de origen");
+          break;
+        }
+        log("Odysee API get: HTTP " + response.status + ", intento " + attempt + "/3");
+      } catch (error) {
+        log("Odysee API get: error de red/JSON, intento " + attempt + "/3");
+      }
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        waitMs = Math.min(waitMs * 2, 2000);
+      }
+    }
+  } else {
+    log("Odysee: URL no corresponde a stream free API v3/v4; no se reconstruye");
+  }
+
+  let finalType = type;
+  try {
+    const finalUrl = new URL(playbackUrl);
+    finalType = /\.m3u8(?:[?#]|$)/i.test(finalUrl.href) ? "hls" :
+      /\.webm(?:[?#]|$)/i.test(finalUrl.pathname) ? "webm" : "mp4";
+  } catch {}
   return {
     ...stream,
-    url: original.href,
-    mime: type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4",
-    label: "Odysee · " + type.toUpperCase(),
+    url: playbackUrl,
+    mime: finalType === "hls" ? "application/vnd.apple.mpegurl" : finalType === "webm" ? "video/webm" : "video/mp4",
+    label: "Odysee · " + finalType.toUpperCase(),
     headers
   };
 }
@@ -2228,7 +2291,7 @@ async function resolveNativePlayerSources(html, pageUrl) {
       // la URL inicialmente y resolveProviderUrl la convierte en un stream genérico.
       // Antes, esa ruta se saltaba las pruebas /v6 y conservaba /api/v3/streams/free.
       const sourceProviderKey = String(source.provider || source.label || "").toLowerCase();
-      if (sourceProviderKey.includes("odysee") && stream && /^https:\/\//i.test(String(stream.url || ""))) {
+      if (sourceProviderKey.includes("odysee") && stream && !/^Odysee ·/i.test(String(stream.label || "")) && /^https:\/\//i.test(String(stream.url || ""))) {
         try {
           if (/(^|\.)odycdn\.com$/i.test(new URL(stream.url).hostname)) {
             stream = await resolveOdyseeDirectMedia(stream.url, stream);
