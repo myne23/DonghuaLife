@@ -1418,6 +1418,8 @@ async function resolveOdysee(providerUrl) {
 
     const safeHeaders = (item) => {
       const source = item && item.headers && typeof item.headers === "object" ? item.headers : {};
+      const removed = Object.keys(source).filter((key) => /^access-control-request-/i.test(key)).length;
+      if (removed) log("Se filtraron cabeceras de preflight para reproducción Odysee", "eliminadas=" + removed);
       const headers = Object.fromEntries(Object.entries(source).filter(([key, value]) =>
         !/^access-control-request-/i.test(key) && typeof value === "string" &&
         /^(accept|referer|origin|user-agent|cookie)$/i.test(key)
