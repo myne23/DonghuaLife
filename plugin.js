@@ -2198,6 +2198,29 @@ async function resolveNativePlayerSources(html, pageUrl) {
         stream = await resolveProviderUrl(direct, pageUrl, false);
       }
       if (!stream) return null;
+
+      // La API propia puede devolver una URL de Odysee alojada en un CDN distinto
+      // de odycdn.com. Usamos el proveedor del payload para conservar el contexto
+      // del embed incluso cuando el hostname del archivo es diferente.
+      const providerKey = String(source.provider || source.label || "").toLowerCase();
+      if (providerKey.includes("odysee")) {
+        const headers = { ...(stream.headers || {}) };
+        const hasHeader = (name) => Object.keys(headers).some((key) => key.toLowerCase() === name);
+        if (!hasHeader("referer")) headers.Referer = "https://odysee.com/";
+        if (!hasHeader("origin")) headers.Origin = "https://odysee.com";
+        if (!hasHeader("accept")) headers.Accept = "*/*";
+        stream = { ...stream, headers };
+        try {
+          const mediaUrl = new URL(stream.url);
+          log("Diagnóstico fuente Odysee", JSON.stringify({
+            host: mediaUrl.hostname,
+            path: mediaUrl.pathname.slice(0, 120),
+            queryKeys: Array.from(mediaUrl.searchParams.keys()).slice(0, 12),
+            mime: stream.mime,
+            headerNames: Object.keys(headers).map((key) => key.toLowerCase()).sort()
+          }));
+        } catch {}
+      }
       const ownR2 = /(^|\.)videos\.donghualife\.com$/i.test(new URL(stream.url).hostname);
       // En proveedores ajenos a R2 dejamos las pistas directas que ya vinieron en
       // la respuesta; no consultamos tokens de subtítulos porque suelen estar incrustados.
