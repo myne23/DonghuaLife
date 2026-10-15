@@ -7,12 +7,10 @@ const seriesHtml = '<html><head><meta property="og:image" content="/images/serie
   '<a href="/watch/vip-show-1-1">Capítulo 1</a>' +
   '<a href="/watch/vip-show-1-2">Capítulo 2</a>' +
   '<a href="/watch/vip-show-1-3">Capítulo 3</a>' +
-  '<a href="/watch/vip-show-1-4"><span>Capítulo 4VIP</span></a>' +
-  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-1">Capítulo 1</a>' +
-  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-2">Capítulo 2</a>' +
-  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-3">Capítulo 3</a>' +
-  '<div class="episode-card"><span class="badge vip">VIP</span>' +
-  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-4">Capítulo 4</a></div></html>';
+  '<a href="/watch/vip-show-2-1">Capítulo 1</a>' +
+  // Simula la ficha que solo enlaza el capítulo 4 de la temporada 3.
+  '<a href="/watch/vip-show-3-4">Capítulo 4</a>' +
+  '<a href="/watch/vip-show-4-1">Capítulo 1</a></html>';
 
 globalThis.kino = {
   log() {},
@@ -23,7 +21,8 @@ globalThis.kino = {
     const match = /\/watch\/vip-show-(\d+)-(\d+)$/.exec(new URL(url).pathname);
     if (match) {
       const season = Number(match[1]), episode = Number(match[2]);
-      const html = '<h1>VIP Show</h1><a href="/watch/vip-show-' + season + '-' + episode + '">Capítulo ' + episode + '</a>';
+      const html = '<h1>VIP Show</h1><a href="/watch/vip-show-' + season + '-' + episode + '">' +
+        (season === 3 && episode === 4 ? '<span>Capítulo 4VIP</span>' : 'Capítulo ' + episode) + '</a>';
       return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return html;}};
     }
     throw new Error("URL inesperada en prueba de temporada VIP: " + url);
