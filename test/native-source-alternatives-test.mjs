@@ -45,13 +45,12 @@ globalThis.kino = {
 
 const plugin = await import("../plugin.js?native-source-alternatives-test=1");
 const stream = await plugin.resolve("/watch/source-test-1-1");
-assert.equal(stream.url, masterUrl, "R2, de mayor prioridad, debe seguir siendo la fuente principal");
+assert.equal(stream.url, dmUrl, "Dailymotion debe ir antes de R2 cuando ambas fuentes se resuelven");
 assert.ok(Array.isArray(stream.alternatives), "Las otras fuentes resueltas deben exponerse como alternativas");
-const dailymotion = stream.alternatives.find((item) => /dailymotion/i.test(item.label));
-assert.ok(dailymotion, "Dailymotion debe aparecer en el menú de servidores");
-assert.equal(dailymotion.url, dmUrl);
-assert.equal(dailymotion.mime, "application/vnd.apple.mpegurl");
-assert.ok(dailymotion.headers && dailymotion.headers.Referer, "La alternativa conserva los headers del proveedor");
-assert.ok(logs.some((line) => line.includes("Fuentes reproducibles del reproductor") && line.includes("Dailymotion")));
+const r2 = stream.alternatives.find((item) => /^r2/i.test(item.label));
+assert.ok(r2, "R2 debe seguir disponible en el menú de servidores");
+assert.equal(r2.url, masterUrl);
+assert.equal(r2.mime, "application/vnd.apple.mpegurl");
+assert.ok(logs.some((line) => line.includes("Fuentes reproducibles del reproductor") && line.includes("R2")));
 
-console.log("Fuentes nativas: R2 queda principal y Dailymotion se ofrece como alternativa seleccionable.");
+console.log("Fuentes nativas: Dailymotion va primero y R2 permanece disponible como alternativa.");
