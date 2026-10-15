@@ -2017,20 +2017,40 @@ async function resolveNativePlayerSources(html, pageUrl) {
     // para que aparezcan en el menú «Servidor» sin reemplazar la fuente principal.
     const alternatives = Array.isArray(selected.stream.alternatives) ? selected.stream.alternatives.slice() : [];
     const seen = new Set([selected.stream.url]);
+    const addAlternative = (alternative) => {
+      if (alternatives.length >= 8 || !alternative) return;
+      const key = alternative.url || alternative.ref;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      alternatives.push(alternative);
+    };
+    // First add sources that were resolved immediately.
     for (const item of usable) {
       if (item === selected || alternatives.length >= 8) continue;
       const alternate = item.stream;
-      if (!alternate || typeof alternate.url !== "string" || !/^https:\/\//i.test(alternate.url) || seen.has(alternate.url)) continue;
-      seen.add(alternate.url);
+      if (!alternate || typeof alternate.url !== "string" || !/^https:\/\//i.test(alternate.url)) continue;
       const kind = /mpegurl|m3u8/i.test(String(alternate.mime || alternate.url)) ? "HLS" :
         /webm/i.test(String(alternate.mime || alternate.url)) ? "WEBM" :
         /mp4/i.test(String(alternate.mime || alternate.url)) ? "MP4" : "";
       const label = String(item.source.label || alternate.label || sourceLabel(alternate.url));
-      alternatives.push({
+      addAlternative({
         label: (label + (kind ? " · " + kind : "")).slice(0, 48),
         url: alternate.url,
         ...(alternate.mime ? { mime: alternate.mime } : {}),
         ...(alternate.headers && Object.keys(alternate.headers).length ? { headers: alternate.headers } : {})
+      });
+    }
+    // A provider can publish a valid token while its page refuses eager extraction.
+    // Keep that provider selectable: Kino will call resolve() for the lazy copy only
+    // when the person picks it, allowing browser capture without delaying startup.
+    for (const source of payload.sources) {
+      if (alternatives.length >= 8) break;
+      if (!source || source.token === selected.source.token || source.isWorking === false) continue;
+      const alreadyResolved = usable.some((item) => item.source.token === source.token);
+      if (alreadyResolved) continue;
+      addAlternative({
+        label: String(source.label || source.provider || "Fuente alternativa").slice(0, 48),
+        ref: "native-token:" + encodeURIComponent(source.token)
       });
     }
     if (alternatives.length) selected.stream.alternatives = alternatives.slice(0, 8);
@@ -2048,6 +2068,32 @@ export async function resolve(ref) {
   const path = String(ref || "");
   // Las referencias de servidores son URLs absolutas y deben tratarse antes de
   // normalizar las referencias de episodios, para no convertirlas en rutas locales.
+  if (path.startsWith("native-token:")) {
+    let token = "";
+    try { token = decodeURIComponent(path.slice("native-token:".length)); } catch {}
+    if (!token || token.length > 2000) throw kino.error("not_found", "La fuente nativa no es válida");
+    const sourceHeaders = {
+      Accept: "application/json,text/plain,*/*",
+      "Content-Type": "application/json",
+      Origin: BASE,
+      Referer: BASE + "/"
+    };
+    const response = await kino.fetch(BASE + "/api/player/source", {
+      method: "POST",
+      headers: sourceHeaders,
+      body: { json: { token } },
+      timeoutMs: 10000
+    });
+    if (!response.ok) throw kino.error("unavailable", "DonghuaLife no entregó esta fuente");
+    const parsed = parseNativeSourceBody(response.text(), BASE + "/");
+    const direct = parsed.urls.find((candidate) => isDirectMediaUrl(candidate)) ||
+      parsed.urls.find((candidate) => /(^|\\.)videos\\.donghualife\\.com$/i.test(new URL(candidate).hostname)) ||
+      parsed.urls[0];
+    if (!direct) throw kino.error("unavailable", "La fuente no publicó un enlace de video");
+    const stream = directStream(direct) || await resolveProviderUrl(direct, BASE + "/", true);
+    if (stream) return stream;
+    throw kino.error("unavailable", "El proveedor no expuso una fuente compatible con Kino");
+  }
   if (path.startsWith("source:")) {
     const sourceUrl = String(path.slice(7));
     if (!sourceUrl || !/^https:\/\//i.test(sourceUrl) || !sourceHostAllowed(sourceUrl)) {
