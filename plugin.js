@@ -1753,13 +1753,13 @@ async function probeRawR2SubtitleUrl(id, headers, language) {
         log("Prueba de entrega directa de subtítulos R2", candidate.variant, "HTTP", response.status);
         continue;
       }
-      const body = response.text().replace(/^\\uFEFF/, "").trimStart();
+      const body = response.text().replace(/^\uFEFF/, "").trimStart();
       let format = "";
-      if (/^WEBVTT(?:\\s|$)/i.test(body)) format = "vtt";
-      else if (/\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{1,3}\\s*-->\\s*\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{1,3}/m.test(body)) format = "srt";
+      if (/^WEBVTT(?:\s|$)/i.test(body)) format = "vtt";
+      else if (/\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/m.test(body)) format = "srt";
       if (!format) {
         log("La variante de subtítulo R2 no devuelve VTT/SRT directo", candidate.variant,
-          JSON.stringify({ contentType: String(response.headers["content-type"] || "").slice(0, 60), json: /^\\s*[\\[{]/.test(body), ass: /^\\s*\\[Script Info\\]/i.test(body) }));
+          JSON.stringify({ contentType: String(response.headers["content-type"] || "").slice(0, 60), json: /^\s*[\[{]/.test(body), ass: /^\s*\[Script Info\]/i.test(body) }));
         continue;
       }
       log("Subtítulo R2 disponible como archivo directo", JSON.stringify({ variante: candidate.variant, formato: format, caracteres: body.length }));
@@ -1815,16 +1815,16 @@ async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
       try { detailJson = JSON.parse(body); } catch {}
       const direct = detailJson && [detailJson.url, detailJson.src, detailJson.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
       if (direct && subtitleFormat(direct)) found.push({ lang: /^(es|spa|spanish|español)/i.test(String(detailJson.language || label)) ? "es" : label.slice(0, 16), url: direct, format: subtitleFormat(direct) });
-      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\\s\\S]*?-->|\\[Script Info\\])/i.test(detailJson.content.trimStart())) {
+      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\s\S]*?-->|\[Script Info\])/i.test(detailJson.content.trimStart())) {
         const inline = detailJson.content.trimStart();
         const inlineFormat = /^WEBVTT/i.test(inline) ? "vtt" :
-          /^\\[Script Info\\]/i.test(inline) ? "ass" : /-->/.test(inline) ? "srt" : "desconocido";
+          /^\[Script Info\]/i.test(inline) ? "ass" : /-->/.test(inline) ? "srt" : "desconocido";
         log("Diagnóstico de subtítulo R2 inline", JSON.stringify({
           formato: inlineFormat,
           caracteres: detailJson.content.length,
           idioma: String(detailJson.language || detailJson.lang || label).slice(0, 16),
           // ASS usa Dialogue: con tiempos H:MM:SS.cc, no la marca SRT HH:MM:SS,mmm.
-          tieneTiempos: /Dialogue:\\s*[^,]*(?:,\\d+){2,}/i.test(inline) || /\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{1,3}/.test(inline),
+          tieneTiempos: /Dialogue:\s*[^,]*(?:,\d+){2,}/i.test(inline) || /\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/.test(inline),
           dialogos: (inline.match(/^Dialogue:/gim) || []).length,
           claves: Object.keys(detailJson).filter((key) => /content|format|type|lang|label|url|mime/i.test(key)).slice(0, 12)
         }));
