@@ -1369,7 +1369,7 @@ async function resolveDailymotion(url, referer) {
 async function resolveOdyseeDirectMedia(mediaUrl, stream) {
   let original;
   try { original = new URL(mediaUrl); } catch { return stream; }
-  if (!/(^|\.)odycdn\.com$/i.test(original.hostname)) return stream;
+  if (!/(^|\\.)odycdn\\.com$/i.test(original.hostname)) return stream;
 
   const headers = {
     ...(stream && stream.headers || {}),
@@ -1378,115 +1378,101 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
     Referer: "https://odysee.com/",
     Origin: "https://odysee.com"
   };
-  const type = /\.m3u8(?:[?#]|$)/i.test(original.href) ? "hls" :
-    /\.webm(?:[?#]|$)/i.test(original.pathname) ? "webm" : "mp4";
-
-  // Odysee's own clients prefer get(...).result.streaming_url over guessing a
-  // CDN URL. DonghuaLife sometimes gives us only /api/v3/streams/free/{name}/{claim_id}/...
-  // Ask the official SDK proxy for the canonical playback URL before falling back
-  // to the captured URL. Never preflight the media URL itself: range requests can
-  // return 401/429 to kino.fetch even when the native player can play them.
   let playbackUrl = original.href;
-  const pathMatch = /^\/api\/v[34]\/streams\/free\/([^/]+)\/([a-f0-9]{40})(?:\/|$)/i.exec(original.pathname);
+  let finalType = /\\.m3u8(?:[?#]|$)/i.test(original.href) ? "hls" :
+    /\\.webm(?:[?#]|$)/i.test(original.pathname) ? "webm" : "mp4";
+
+  // La URL capturada del CDN ya suele contener claim_id y el prefijo del sd_hash.
+  // Consultamos resolve (anónimo, sin auth) solo para validar/recuperar metadatos;
+  // nunca llamamos get, que es el endpoint que puede activar el rate limit.
+  const pathMatch = /^\\/api\\/v[34]\\/streams\\/free\\/([^/]+)\\/([a-f0-9]{40})(?:\\/([^/]+))?/i.exec(original.pathname);
   if (pathMatch) {
     let name = pathMatch[1];
     try { name = decodeURIComponent(name); } catch {}
-    const uri = "lbry://" + name + "#" + pathMatch[2];
-    const apiHeaders = {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "User-Agent": headers["User-Agent"],
-      "Referer": "https://odysee.com/",
-      "Origin": "https://odysee.com"
-    };
-    const apiPost = async (method, params) => {
-      const response = await kino.fetch(
-        "https://api.na-backend.odysee.com/api/v1/proxy?m=" + method,
-        {
-          method: "POST",
-          headers: apiHeaders,
-          body: JSON.stringify({ method, params }),
-          timeoutMs: 8000
-        }
-      );
-      let data = null;
-      try { data = JSON.parse(response.text()); } catch {}
-      return { status: response.status, ok: response.ok, data };
-    };
-
-    // Igual que el cliente de Odysee: resolver primero la claim y luego pedir
-    // get usando la URI corta/canónica, no asumir que el nombre del path CDN es el slug.
-    let canonicalUri = uri;
+    const claimId = pathMatch[2].toLowerCase();
+    const uri = "lbry://" + name + "#" + claimId;
+    const cacheKey = "odysee:resolve:" + claimId;
+    let claim = null;
     try {
-      const resolved = await apiPost("resolve", { urls: [uri] });
-      const result = resolved.data && resolved.data.result;
-      const claim = result && (result[uri] || result[uri.toLowerCase()] ||
-        (Array.isArray(result) ? result[0] : null));
-      const canonical = claim && (
-        claim.short_url || claim.canonical_url || claim.canonicalUrl ||
-        claim.url || claim.permanent_url || claim.permanentUrl
-      );
-      if (resolved.ok && canonical && /^lbry:\/\//i.test(String(canonical))) {
-        canonicalUri = String(canonical);
-        log("Odysee API resolve: URI canónica encontrada", "campos=" +
-          Object.keys(claim).filter((key) => /url|claim|name|canonical/i.test(key)).slice(0, 12).join(","));
-      } else {
-        const keys = claim && typeof claim === "object" ? Object.keys(claim).slice(0, 16).join(",") :
-          result && typeof result === "object" ? Object.keys(result).slice(0, 12).join(",") : "sin_resultado";
-        log("Odysee API resolve: sin URI canónica", "HTTP=" + resolved.status, "campos=" + keys);
+      const cached = kino.storage.get(cacheKey);
+      if (cached) claim = JSON.parse(cached);
+    } catch {}
+
+    if (!claim) {
+      try {
+        // El proxy de resolve es relajado: no enviar Authorization ni cookies
+        // permite que Odysee aproveche su caché compartida.
+        await kino.sleep(500);
+        const response = await kino.fetch(
+          "https://api.na-backend.odysee.com/api/v1/proxy?m=resolve",
+          {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json-rpc",
+              "User-Agent": headers["User-Agent"]
+            },
+            body: JSON.stringify({ jsonrpc: "2.0", method: "resolve", params: { urls: [uri] }, id: 1 }),
+            timeoutMs: 8000
+          }
+        );
+        let data = null;
+        try { data = JSON.parse(response.text()); } catch {}
+        const result = data && data.result;
+        claim = result && (result[uri] || result[uri.toLowerCase()] ||
+          Object.values(result).find((item) => item && String(item.claim_id || "").toLowerCase() === claimId));
+        if (response.status === 429) {
+          log("Odysee resolve: HTTP 429; se conserva URL CDN capturada");
+        } else if (!response.ok || data && data.error) {
+          log("Odysee resolve: respuesta no válida", "HTTP=" + response.status,
+            "rpcError=" + Boolean(data && data.error));
+        } else if (claim && claim.value && claim.value.source) {
+          try { kino.storage.set(cacheKey, JSON.stringify(claim), { ttlMs: 6 * 60 * 60 * 1000 }); } catch {}
+          log("Odysee resolve: metadatos guardados en caché", "claim=" + claimId.slice(0, 8));
+        }
+      } catch (error) {
+        log("Odysee resolve: no disponible; se conserva URL CDN capturada");
       }
-    } catch (error) {
-      log("Odysee API resolve: error de red/JSON; se prueba URI original");
+    } else {
+      log("Odysee resolve: metadatos reutilizados desde caché");
     }
 
-    let waitMs = 500;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const response = await apiPost("get", { uri: canonicalUri, environment: "live" });
-        const data = response.data;
-        const candidate = data && !data.error && data.result && data.result.streaming_url;
-        if (response.ok) {
-          if (typeof candidate === "string" && /^https:\/\//i.test(candidate)) {
-            let candidateUrl;
-            try { candidateUrl = new URL(candidate); } catch {}
-            if (candidateUrl && /(^|\.)odycdn\.com$/i.test(candidateUrl.hostname)) {
-              playbackUrl = candidateUrl.href;
-              log("Odysee API get: streaming_url oficial encontrada", "tipo=" + type,
-                "urlDistinta=" + (playbackUrl !== original.href));
-            } else {
-              log("Odysee API get: streaming_url con host inesperado; se conserva URL de origen");
-            }
-          } else {
-            const resultKeys = data && data.result && typeof data.result === "object"
-              ? Object.keys(data.result).slice(0, 16).join(",") : "sin_resultado";
-            log("Odysee API get: sin streaming_url", "HTTP=" + response.status, "campos=" + resultKeys,
-              "uriCanonica=" + (canonicalUri !== uri));
-          }
-          break;
-        }
-        if (![429, 502, 503].includes(response.status)) {
-          log("Odysee API get: HTTP " + response.status + "; se conserva URL de origen");
-          break;
-        }
-        log("Odysee API get: HTTP " + response.status + ", intento " + attempt + "/3");
-      } catch (error) {
-        log("Odysee API get: error de red/JSON, intento " + attempt + "/3");
+    const source = claim && claim.value && claim.value.source;
+    if (source && source.sd_hash) {
+      const rawName = String(claim.name || name);
+      const safeName = encodeURIComponent(rawName);
+      const sourceName = String(source.name || "");
+      let ext = "";
+      if (/\\.[a-z0-9]{2,8}$/i.test(sourceName)) ext = sourceName.split(".").pop().toLowerCase();
+      if (!ext) {
+        const mediaType = String(source.media_type || "").toLowerCase();
+        ext = mediaType.includes("webm") ? "webm" : mediaType.includes("mpegurl") ? "m3u8" :
+          mediaType.includes("mp4") ? "mp4" : "mp4";
       }
-      if (attempt < 3) {
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-        waitMs = Math.min(waitMs * 2, 2000);
+      // Preferir el prefijo que ya publica el CDN en la URL original (puede ser
+      // más corto que 8 caracteres); si no está, usar un prefijo del sd_hash.
+      const filename = pathMatch[3] || "";
+      const existingSuffix = /^([a-f0-9]{4,64})\\.[a-z0-9]{2,8}$/i.exec(filename);
+      const prefix = existingSuffix ? existingSuffix[1] : String(source.sd_hash).slice(0, 8);
+      const directUrl = "https://player.odycdn.com/api/v3/streams/free/" +
+        safeName + "/" + claimId + "/" + prefix + "." + ext;
+      // Solo reconstruimos cuando resolve devuelve datos coherentes con el claim.
+      if (/^[a-z0-9_-]{1,200}$/i.test(rawName) && /^[a-f0-9]{40}$/i.test(claim.claim_id || claimId) &&
+          /^[a-f0-9]{4,64}$/i.test(prefix) && /^[a-z0-9]{2,8}$/i.test(ext)) {
+        playbackUrl = directUrl;
+        finalType = ext === "m3u8" ? "hls" : ext === "webm" ? "webm" : "mp4";
+        log("Odysee: URL directa v3 construida desde resolve", "tipo=" + finalType,
+          "metadatos=" + Boolean(source.sd_hash));
+      } else {
+        log("Odysee: metadatos incompletos; se conserva URL CDN capturada");
       }
+    } else {
+      log("Odysee: resolve sin sd_hash; se conserva URL CDN capturada");
     }
   } else {
     log("Odysee: URL no corresponde a stream free API v3/v4; no se reconstruye");
   }
 
-  let finalType = type;
-  try {
-    const finalUrl = new URL(playbackUrl);
-    finalType = /\.m3u8(?:[?#]|$)/i.test(finalUrl.href) ? "hls" :
-      /\.webm(?:[?#]|$)/i.test(finalUrl.pathname) ? "webm" : "mp4";
-  } catch {}
   return {
     ...stream,
     url: playbackUrl,
