@@ -21,6 +21,9 @@ globalThis.kino = {
     const match = /\/watch\/vip-show-(\d+)-(\d+)$/.exec(new URL(url).pathname);
     if (match) {
       const season = Number(match[1]), episode = Number(match[2]);
+      if (episode > 1 && !(season === 3 && episode <= 4)) {
+        throw new Error("Episodio no disponible en fixture");
+      }
       const html = '<h1>VIP Show</h1><a href="/watch/vip-show-' + season + '-' + episode + '">' +
         (season === 3 && episode === 4 ? '<span>Capítulo 4VIP</span>' : 'Capítulo ' + episode) + '</a>';
       return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return html;}};
