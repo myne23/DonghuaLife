@@ -1622,7 +1622,7 @@ function parsePlayerSourcePayload(html) {
   // Keep source priority deterministic; working sources first, then the site's priority.
   records.sort((a, b) => Number(b.isWorking) - Number(a.isWorking) || a.priority - b.priority);
   let episodeId = "";
-  const episodeRe = /["'](?:episodeId|episode_id|episodeID)["']\s*:\s*["']([^"']{1,120})["']/i;
+  const episodeRe = /\\?["'](?:episodeId|episode_id|episodeID)\\?["']\s*:\s*\\?["']([^"'\\\\]{1,120})\\?["']/i;
   const episodeMatch = episodeRe.exec(source);
   if (episodeMatch) episodeId = episodeMatch[1];
   return { sources: records.slice(0, 10), episodeId };
@@ -1733,21 +1733,35 @@ async function readNativeHlsSubtitles(masterUrl) {
 }
 
 async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
-  if (!episodeId) return [];
   const headers = {
     Accept: "application/json,*/*",
     Referer: pageUrl,
     Origin: BASE
   };
   const found = [];
-  try {
-    const response = await kino.fetch(BASE + "/api/subtitles?episodeId=" + encodeURIComponent(episodeId), {
-      headers, timeoutMs: 7000
-    });
-    if (!response.ok) return [];
-    const json = response.json();
-    const tracks = Array.isArray(json && json.subtitles) ? json.subtitles : [];
-    for (const track of tracks.slice(0, 10)) {
+  const tracks = [];
+  if (episodeId) {
+    try {
+      const response = await kino.fetch(BASE + "/api/subtitles?episodeId=" + encodeURIComponent(episodeId), {
+        headers, timeoutMs: 7000
+      });
+      if (response.ok) {
+        const json = response.json();
+        if (Array.isArray(json && json.subtitles)) tracks.push(...json.subtitles.slice(0, 10));
+      }
+    } catch (error) {
+      log("No se pudo consultar la lista oficial de subtítulos R2", String(error && error.message || error).slice(0, 100));
+    }
+  }
+  for (const source of sourceRecords || []) {
+    for (const id of source.uuids || []) {
+      if (typeof id === "string" && /^[0-9a-f-]{32,36}$/i.test(id) &&
+          !tracks.some((track) => track && String(track.id || track.uuid || "") === id)) {
+        tracks.push({ id, language: "es" });
+      }
+    }
+  }
+  for (const track of tracks.slice(0, 15)) {
       if (!track || typeof track !== "object") continue;
       const label = String(track.language || track.label || "es");
       const url = [track.url, track.src, track.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
@@ -1777,6 +1791,25 @@ async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
     log("No se pudo consultar la API de subtítulos R2", String(error && error.message || error).slice(0, 100));
   }
   return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index).slice(0, 10);
+}
+
+function nativeSourceSubtitleHints(source) {
+  const found = [];
+  const walk = (node, depth) => {
+    if (depth > 6 || node == null) return;
+    if (Array.isArray(node)) { for (const item of node) walk(item, depth + 1); return; }
+    if (typeof node !== "object") return;
+    const lang = String(node.language || node.lang || node.label || "es");
+    for (const key of ["url", "src", "file", "subtitleUrl", "subtitle_url"]) {
+      const url = node[key];
+      if (typeof url === "string" && /^https:\/\//i.test(url) && subtitleFormat(url)) {
+        found.push({ lang: /^(es|spa|spanish|español)/i.test(lang) ? "es" : lang.slice(0, 16), url, format: subtitleFormat(url) });
+      }
+    }
+    for (const value of Object.values(node)) walk(value, depth + 1);
+  };
+  walk(source && source.subtitles, 0);
+  return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index);
 }
 
 async function resolveNativePlayerSources(html, pageUrl) {
@@ -1822,7 +1855,7 @@ async function resolveNativePlayerSources(html, pageUrl) {
       }
       if (!stream) return null;
       const ownR2 = /(^|\.)videos\.donghualife\.com$/i.test(new URL(stream.url).hostname);
-      let subtitles = parsed.subtitles;
+      let subtitles = parsed.subtitles.concat(nativeSourceSubtitleHints(source));
       if (ownR2) {
         subtitles = subtitles.concat(await readNativeHlsSubtitles(stream.url));
         subtitles = subtitles.concat(await fetchNativeR2Subtitles(payload.episodeId, pageUrl, payload.sources));
