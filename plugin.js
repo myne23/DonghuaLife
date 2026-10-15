@@ -1085,6 +1085,19 @@ function diagnosePlayerHints(html) {
   const source = String(html || "");
   const scripts = source.match(/<script\b/gi) || [];
   const hint = (pattern) => pattern.test(source);
+  const keyCounts = new Map();
+  const keyRe = /["']([A-Za-z_$][\w$-]{1,50})["']\s*:/g;
+  let keyMatch;
+  while ((keyMatch = keyRe.exec(source)) && keyCounts.size < 300) {
+    const key = keyMatch[1];
+    if (/(?:player|video|media|source|stream|playback|subtitle|caption|track|hls|manifest|episode|url|file|r2|cloudflare)/i.test(key)) {
+      keyCounts.set(key, (keyCounts.get(key) || 0) + 1);
+    }
+  }
+  const likelyKeys = Array.from(keyCounts.entries())
+    .sort((x, y) => y[1] - x[1])
+    .slice(0, 24)
+    .map(([key, count]) => ({ key, count }));
   return {
     htmlChars: source.length,
     scripts: scripts.length,
@@ -1093,7 +1106,9 @@ function diagnosePlayerHints(html) {
     hasR2Text: hint(/\br2\b|cloudflare.?r2/i),
     hasPlayerText: hint(/player|playback|stream|source|videoUrl|video_url/i),
     hasIframeText: hint(/iframe|data-options|data-player|embedUrl|embed_url/i),
-    hasNextData: hint(/__NEXT_DATA__|self\.__next_f|next\/static/i)
+    hasNextData: hint(/__NEXT_DATA__|self\.__next_f|next\/static/i),
+    hasSubtitleText: hint(/subtitle|subtitles|captions?|\.vtt(?:[?#"'\s]|$)|\.srt(?:[?#"'\s]|$)|subtitulos|subtítulos/i),
+    likelyDataKeys: likelyKeys
   };
 }
 
@@ -1343,6 +1358,14 @@ function capturedStream(capture) {
       url: String(item.url),
       format: /\.srt(?:[?#]|$)/i.test(item.url) ? "srt" : "vtt"
     })).slice(0, 10);
+  const safeSubtitleInfo = result.subtitles.map((item) => {
+    try {
+      const u = new URL(item.url);
+      return { host: u.hostname, ext: /\.srt(?:[?#]|$)/i.test(u.pathname) ? "srt" :
+        /\.vtt(?:[?#]|$)/i.test(u.pathname) ? "vtt" : "desconocido", lang: item.lang };
+    } catch { return { lang: item.lang, ext: "invalido" }; }
+  });
+  log("Diagnóstico de subtítulos capturados", JSON.stringify({ vistosPorElNavegador: subtitles.length, compatibles: result.subtitles.length, pistas: safeSubtitleInfo }));
   if (!result.subtitles.length) delete result.subtitles;
   return result;
 }
