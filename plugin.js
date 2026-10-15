@@ -279,7 +279,7 @@ function parseEmbed(html, pageUrl) {
     const url = absolute(match[2], pageUrl);
     if (url && (/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(url) || /(?:doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co)\//i.test(url) ||
       /(^|\/\/)([^/]+\.)?ok\.ru\/(?:video|videoembed)\//i.test(url) ||
-      /(^|\/\/)([^/]+\.)?(?:dailymotion\.com|dai\.ly)\/(?:embed\/video|video)\//i.test(url))) return url;
+      /(^|\/\/)([^/]+\.)?(?:dailymotion\.com|dai\.ly)\/(?:embed\/video|video|player\/)/i.test(url))) return url;
   }
   const raw = /(?:src|file|url)\s*[:=]\s*["']((?:https?:)?\/\/[^"']*(?:ok\.ru|\.m3u8|\.mp4|\.webm)[^"']*)["']/i.exec(html);
   return raw ? absolute(raw[1], pageUrl) : "";
@@ -1149,7 +1149,11 @@ async function resolveDailymotion(url, referer) {
   try {
     const raw = await getText(metadataUrl, { headers: { Referer: referer || "https://www.dailymotion.com/" } });
     const metadata = JSON.parse(raw);
-    const urls = [];
+    // El reproductor moderno de Dailymotion entrega la fuente principal en qualities.auto.
+    // La leemos primero y después recorremos el resto de la metadata por compatibilidad.
+    const urls = Array.isArray(metadata.qualities?.auto)
+      ? metadata.qualities.auto.map((quality) => quality && quality.url).filter((value) => typeof value === "string")
+      : [];
     mediaUrlsInObject(metadata, urls, 0);
     const uniqueUrls = Array.from(new Set(urls));
     const safeUrlInfo = (item) => {
