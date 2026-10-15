@@ -1073,15 +1073,23 @@ export async function episodes(ref) {
   // Algunas fichas muestran solo los episodios de la temporada seleccionada, aunque
   // anuncian varias temporadas. Cada ruta /watch/<serie>-<temporada>-1 contiene la
   // lista real de esa temporada; la consultamos cuando la ficha no trae la lista entera.
-  const seasonCount = declaredSeasonCount(html);
+  const declaredSeasons = declaredSeasonCount(html);
   const seasonPosters = parseSeasonPosters(html, detailUrl);
   const firstEpisode = list.find((episode) => !episode.specialMovie);
+  // El contador de temporadas de la ficha puede estar desactualizado. La lista de
+  // episodios también es evidencia de temporadas nuevas (p. ej. declara 2, enlaza T3).
+  const listedMaxSeason = list.reduce((max, episode) =>
+    episode.specialMovie ? max : Math.max(max, episode.season), 0);
+  const seasonCount = Math.max(declaredSeasons, listedMaxSeason);
   if (seasonCount > 1 && firstEpisode) {
     for (let number = 1; number <= seasonCount; number++) {
       const existing = seasonItems(list, number);
       // Una sola referencia puede ser un enlace destacado de temporada, no la lista completa.
       if (existing.length > 1) continue;
-      const route = episodeRouteForSeason(firstEpisode.ref, number);
+      // Usar una referencia de la propia temporada si existe: las temporadas pueden
+      // cambiar de slug/ID y no compartir la base de URL de la primera temporada.
+      const seasonAnchor = existing[0] || firstEpisode;
+      const route = episodeRouteForSeason(seasonAnchor.ref, number);
       if (!route) continue;
       try {
         const seasonUrl = absolute(route, detailUrl);
@@ -1098,7 +1106,7 @@ export async function episodes(ref) {
           let foundAny = recovered.size > 0;
           for (let episodeNumber = 1; episodeNumber <= 100; episodeNumber++) {
             if (recovered.has(episodeNumber)) continue;
-            const episodeRoute = episodeRouteForSeason(firstEpisode.ref, number, episodeNumber);
+            const episodeRoute = episodeRouteForSeason(seasonAnchor.ref, number, episodeNumber);
             if (!episodeRoute) break;
             try {
               const episodeUrl = absolute(episodeRoute, detailUrl);
