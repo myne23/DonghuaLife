@@ -289,7 +289,17 @@ function parseEpisodes(html, pageUrl) {
   const specialRange = /Peli(?:\s*Ep)?\s*(\d+)\s*-\s*(\d+)/i.exec(specialLabel);
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
+  let previousWatchEnd = 0;
   while ((match = re.exec(html)) && out.length < 2000) {
+    const previousEpisodeEnd = previousWatchEnd;
+    previousWatchEnd = re.lastIndex;
+    const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 900), match.index);
+    // Si el badge anterior cerraba la tarjeta previa, no debe contaminar el episodio actual.
+    const blockClosers = /<\/(?:div|li|article|section|ul|ol)\s*>/gi;
+    let blockCloser;
+    let lastBlockEnd = -1;
+    while ((blockCloser = blockClosers.exec(precedingMarkup))) lastBlockEnd = blockClosers.lastIndex;
+    const beforeLink = precedingMarkup.slice(lastBlockEnd >= 0 ? lastBlockEnd : 0);
     const url = absolute(match[2], pageUrl);
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
@@ -304,7 +314,22 @@ function parseEpisodes(html, pageUrl) {
     const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 700));
     const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
     const afterLink = nextEpisodeLink ? tail.slice(0, nextEpisodeLink.index) : tail.slice(0, 260);
-    if (/VIP/i.test([linkLabel, imageLabelForVip, attr(match[0], "aria-label"), attr(match[0], "title"), afterLink].join(" "))) {
+    // El distintivo VIP también puede estar antes del enlace, dentro de la tarjeta,
+    // o indicado solo por una clase/atributo (sin texto visible).
+    const afterLinkVipAt = afterLink.search(/VIP/i);
+    const beforeNextCard = afterLinkVipAt >= 0 && /<(?:div|li|article|section)\b[^>]*(?:episode|chapter|card|item|grid)/i.test(afterLink.slice(0, afterLinkVipAt));
+    const afterLinkVip = beforeNextCard ? "" : afterLink;
+    const vipContext = [
+      linkLabel, imageLabelForVip,
+      attr(match[0], "class"), attr(match[0], "id"),
+      attr(match[0], "aria-label"), attr(match[0], "title"),
+      attr(match[0], "data-label"), attr(match[0], "data-title"),
+      afterLinkVip
+    ].join(" ");
+    // En el prefijo solo aceptamos marcadores VIP estructurales o una insignia
+    // cuyo texto sea exactamente «VIP»; no el nombre de la serie (p. ej. «VIP Show»).
+    const vipBeforeLink = /(?:\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em)>)/i.test(beforeLink);
+    if (/VIP/i.test(vipContext) || vipBeforeLink) {
       seen.add(path);
       continue;
     }
