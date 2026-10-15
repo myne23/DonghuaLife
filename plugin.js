@@ -224,10 +224,10 @@ function parseInfo(html, slug) {
 
 function parseSeasonPosters(html) {
   const posters = new Map();
-  const images = String(html || "").match(/<img\\b[^>]*>/gi) || [];
+  const images = String(html || "").match(/<img\b[^>]*>/gi) || [];
   for (const image of images) {
     const label = [attr(image, "alt"), attr(image, "title"), attr(image, "aria-label")].join(" ");
-    const match = /\\btemporada\\s*(\\d{1,3})\\b/i.exec(label);
+    const match = /\btemporada\s*(\d{1,3})\b/i.exec(label);
     if (!match) continue;
     const raw = attr(image, "data-src") || attr(image, "data-lazy-src") ||
       attr(image, "data-original") || attr(image, "src");
@@ -255,11 +255,11 @@ function parseEpisodes(html, pageUrl) {
     try { path = new URL(url).pathname; } catch { continue; }
     if (seen.has(path)) continue;
     const linkLabel = textOf(match[3]);
-    const innerImageForVip = /<img\\b[^>]*>/i.exec(match[3]);
+    const innerImageForVip = /<img\b[^>]*>/i.exec(match[3]);
     const imageLabelForVip = innerImageForVip
       ? (attr(innerImageForVip[0], "alt") || attr(innerImageForVip[0], "title")) : "";
     // Los capítulos VIP no deben aparecer como reproducibles para usuarios sin VIP.
-    if (/\\bVIP\\b/i.test([linkLabel, imageLabelForVip, attr(match[0], "aria-label"), attr(match[0], "title")].join(" "))) {
+    if (/\bVIP\b/i.test([linkLabel, imageLabelForVip, attr(match[0], "aria-label"), attr(match[0], "title")].join(" "))) {
       seen.add(path);
       continue;
     }
