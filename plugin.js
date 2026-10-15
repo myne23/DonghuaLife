@@ -317,8 +317,10 @@ function parseEpisodes(html, pageUrl) {
     // El distintivo VIP también puede estar antes del enlace, dentro de la tarjeta,
     // o indicado solo por una clase/atributo (sin texto visible).
     const vipContext = [
-      linkLabel, imageLabelForVip, match[0],
+      linkLabel, imageLabelForVip,
+      attr(match[0], "class"), attr(match[0], "id"),
       attr(match[0], "aria-label"), attr(match[0], "title"),
+      attr(match[0], "data-label"), attr(match[0], "data-title"),
       afterLink
     ].join(" ");
     // En el prefijo solo aceptamos marcadores VIP estructurales o una insignia
