@@ -27,27 +27,15 @@ globalThis.kino = {
     if (url === "https://donghualife.com/api/subtitles/" + subtitleId) {
       return {ok:true,status:200,headers:{"content-type":"application/json"},text(){return JSON.stringify({success:true,label:"Español",language:"es",content:ass});},json(){return {success:true,label:"Español",language:"es",content:ass};}};
     }
-    if (url === "https://donghualife.com/api/subtitles/" + subtitleId + "?format=srt") {
-      return {ok:false,status:404,headers:{"content-type":"application/json"},text(){return '{"error":"not found"}';}};
-    }
-    if (url === "https://donghualife.com/api/subtitles/" + subtitleId + "?format=vtt") {
-      return {ok:true,status:200,headers:{"content-type":"text/vtt"},text(){return "WEBVTT\n\n00:00:01.200 --> 00:00:03.400\nHola mundo";}};
-    }
-    if (url === "https://donghualife.com/api/subtitles/" + subtitleId + "?raw=1" ||
-        url === "https://donghualife.com/api/subtitles/" + subtitleId + ".srt") {
-      return {ok:false,status:404,headers:{"content-type":"application/json"},text(){return ""; }};
-    }
-    throw new Error("URL inesperada en prueba de entrega directa: " + url);
+    throw new Error("No debe hacer sondeos especulativos de URL de subtítulos: " + url);
   }
 };
 
 const plugin = await import("../plugin.js?r2-inline-subtitle-delivery-test=1");
 const stream = await plugin.resolve("/watch/el-inmortal-renegado-1-161");
 assert.equal(stream.url, masterUrl);
-assert.ok(stream.subtitles.some((track) =>
-  track.url === "https://donghualife.com/api/subtitles/" + subtitleId + "?format=vtt" &&
-  track.format === "vtt" && track.lang === "es"
-), "Si el sitio expone una variante VTT directa, debe registrarse como pista Kino");
-assert.ok(logs.some((line) => line.includes('"dialogos":1')), "El diagnóstico ASS debe reconocer Dialogue:");
-assert.ok(logs.some((line) => line.includes("Subtítulo R2 disponible como archivo directo")));
-console.log("Entrega directa R2: detecta Dialogue ASS y registra solo una variante que devuelve VTT/SRT crudo.");
+assert.equal(stream.subtitles, undefined, "ASS inline no debe anunciarse como pista de archivo compatible");
+assert.ok(logs.some((line) => line.includes("Subtítulo R2 encontrado en ASS inline; Kino requiere una URL VTT/SRT")));
+assert.ok(!logs.some((line) => line.includes("format=vtt") || line.includes("raw=1") || line.includes("suffix=.srt")),
+  "No debe sondear variantes especulativas de entrega");
+console.log("R2: mantiene la detección honesta de ASS inline y evita los sondeos lentos de URL.");

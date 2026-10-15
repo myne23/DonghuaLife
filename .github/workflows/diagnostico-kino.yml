@@ -31,7 +31,7 @@ jobs:
             done
           done
       - name: Ejecutar pruebas de regresión del plugin
-        run: node test/smoke-test.mjs
+        run: npm run test:smoke
       - name: Validar contrato y manifiesto
         run: node kino-sdk/sdk/validate.mjs .
       - name: Probar Inicio con datos reales y exigir las cinco filas
