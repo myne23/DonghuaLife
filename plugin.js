@@ -1974,7 +1974,7 @@ async function resolveNativePlayerSources(html, pageUrl) {
   // en «Servidor» y vuelve a ser principal si ninguna otra fuente se resolvió.
   const isR2 = (item) =>
     /^r2$/i.test(String(item.source.label || item.source.provider || "").trim()) ||
-    /(^|\\.)videos\\.donghualife\\.com$/i.test(String(item.stream.url || ""));
+    /(^|\.)videos\.donghualife\.com$/i.test(String(item.stream.url || ""));
   const usable = results.filter(Boolean).sort((a, b) =>
     Number(b.source.isWorking) - Number(a.source.isWorking) ||
     Number(isR2(a)) - Number(isR2(b)) ||
