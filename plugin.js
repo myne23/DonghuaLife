@@ -2107,16 +2107,30 @@ async function resolveNativePlayerSources(html, pageUrl) {
       });
     }
     // A provider can publish a valid token while its page refuses eager extraction.
-    // Keep that provider selectable: Kino will call resolve() for the lazy copy only
-    // when the person picks it, allowing browser capture without delaying startup.
+    // Keep it selectable without delaying startup. Kino limits each lazy ref to 512
+    // characters, so store long tokens in the plugin's short-lived storage and pass only
+    // a SHA-256 key to resolve(). Never log or expose the token itself.
     for (const source of payload.sources) {
       if (alternatives.length >= 8) break;
       if (!source || source.token === selected.source.token || source.isWorking === false) continue;
       const alreadyResolved = usable.some((item) => item.source.token === source.token);
       if (alreadyResolved) continue;
+      const encodedRef = "native-token:" + encodeURIComponent(source.token);
+      let ref = encodedRef;
+      if (encodedRef.length > 512) {
+        try {
+          const key = kino.crypto.hash("sha256", source.token);
+          kino.storage.set("native-source-token:" + key, source.token, { ttlMs: 600000 });
+          ref = "native-token-ref:" + key;
+          log("Token de fuente alternativa guardado con referencia corta", source.label, "token_chars=" + source.token.length);
+        } catch (error) {
+          log("No se pudo conservar la alternativa nativa larga", source.label, String(error && error.message || error).slice(0, 100));
+          continue;
+        }
+      }
       addAlternative({
         label: String(source.label || source.provider || "Fuente alternativa").slice(0, 48),
-        ref: "native-token:" + encodeURIComponent(source.token)
+        ref
       });
     }
     if (alternatives.length) selected.stream.alternatives = alternatives.slice(0, 8);
@@ -2134,10 +2148,16 @@ export async function resolve(ref) {
   const path = String(ref || "");
   // Las referencias de servidores son URLs absolutas y deben tratarse antes de
   // normalizar las referencias de episodios, para no convertirlas en rutas locales.
-  if (path.startsWith("native-token:")) {
+  if (path.startsWith("native-token:") || path.startsWith("native-token-ref:")) {
     let token = "";
-    try { token = decodeURIComponent(path.slice("native-token:".length)); } catch {}
-    if (!token || token.length > 2000) throw kino.error("not_found", "La fuente nativa no es válida");
+    if (path.startsWith("native-token-ref:")) {
+      const key = path.slice("native-token-ref:".length);
+      if (!/^[a-f0-9]{64}$/i.test(key)) throw kino.error("not_found", "La referencia de la fuente nativa no es válida");
+      try { token = kino.storage.get("native-source-token:" + key) || ""; } catch {}
+    } else {
+      try { token = decodeURIComponent(path.slice("native-token:".length)); } catch {}
+    }
+    if (!token || token.length > 2000) throw kino.error("unavailable", "La referencia de la fuente nativa venció; volvé a abrir el episodio");
     const sourceHeaders = {
       Accept: "application/json,text/plain,*/*",
       "Content-Type": "application/json",
