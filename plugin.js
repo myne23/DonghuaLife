@@ -1371,45 +1371,28 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
   try { original = new URL(mediaUrl); } catch { return stream; }
   if (!/(^|\.)odycdn\.com$/i.test(original.hostname)) return stream;
 
-  const headers = { Accept: "*/*", Referer: "https://odysee.com/", Origin: "https://odysee.com" };
-  const candidates = [{ url: original.href, reason: "capturado", type: /\.m3u8(?:[?#]|$)/i.test(original.pathname) ? "hls" : "mp4" }];
-
-  // El formato legado es /api/v3/streams/free/{name}/{claim_id}/{sd_hash_prefix}.mp4.
-  // V6 requiere el claim_id (segmento 2) y el prefijo del sd_hash (nombre del archivo),
-  // no el nombre/slug ni el hash de 40 caracteres del segmento anterior.
-  const legacy = /^\/api\/v[34]\/streams\/free\/([^/]+)\/([^/]+)\/([^/]+)\.(?:mp4|webm)$/i.exec(original.pathname);
-  if (legacy) {
-    const claimId = legacy[2], sdHashPrefix = legacy[3];
-    candidates.unshift({
-      url: "https://player.odycdn.com/v6/streams/" + encodeURIComponent(claimId) + "/" + encodeURIComponent(sdHashPrefix) + ".mp4",
-      reason: "v6-mp4",
-      type: "mp4"
-    });
-  }
-
-  let lastStatus = 0;
-  for (const candidate of candidates) {
-    try {
-      const requestHeaders = { ...headers };
-      if (candidate.type !== "hls") requestHeaders.Range = "bytes=0-0";
-      const response = await kino.fetch(candidate.url, { method: "GET", headers: requestHeaders, timeoutMs: 5000 });
-      lastStatus = response.status;
-      log("Prueba de URL Odysee", candidate.reason, new URL(candidate.url).hostname, "HTTP", response.status);
-      if (response.ok || response.status === 206) {
-        return {
-          ...stream,
-          url: candidate.url,
-          mime: candidate.type === "hls" ? "application/vnd.apple.mpegurl" : "video/mp4",
-          label: candidate.type === "hls" ? "Odysee · HLS" : "Odysee · MP4",
-          headers
-        };
-      }
-    } catch (error) {
-      log("No se pudo comprobar URL Odysee", candidate.reason, String(error && error.message || error).slice(0, 90));
-    }
-  }
-  log("Odysee: ninguna variante superó la comprobación previa; se conserva la fuente capturada", "último_http=" + lastStatus);
-  return { ...stream, headers };
+  // El reproductor web de Odysee solicita el archivo en rangos (HTTP 206) y
+  // puede usar estado/cookies de su navegador. Una comprobación independiente
+  // con kino.fetch puede recibir 401/429 aunque la URL funcione en el reproductor,
+  // además de consumir peticiones y provocar rate limiting. No hacer preflight:
+  // conservar exactamente la URL capturada y dejar que el reproductor pida rangos.
+  const headers = {
+    ...(stream && stream.headers || {}),
+    Accept: "*/*",
+    Referer: "https://odysee.com/",
+    Origin: "https://odysee.com"
+  };
+  const type = /\.m3u8(?:[?#]|$)/i.test(original.href) ? "hls" :
+    /\.webm(?:[?#]|$)/i.test(original.pathname) ? "webm" : "mp4";
+  log("Odysee: se conserva URL capturada sin preflight", "tipo=" + type,
+    "path=" + original.pathname.slice(0, 100));
+  return {
+    ...stream,
+    url: original.href,
+    mime: type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4",
+    label: "Odysee · " + type.toUpperCase(),
+    headers
+  };
 }
 async function resolveOdysee(providerUrl) {
   let parsed;
@@ -2300,23 +2283,14 @@ async function resolveNativePlayerSources(html, pageUrl) {
       return null;
     }
   }));
-  // Si Odysee entregó una URL V6 válida tras la comprobación HTTP, preferirla:
-  // evita iniciar automáticamente Rumble cuando su CDN responde 401/429.
-  const isValidatedOdyseeV6 = (item) => {
-    if (!/odysee/i.test(String(item.source.label || item.source.provider || ""))) return false;
-    try {
-      const u = new URL(String(item.stream.url || ""));
-      return /(^|\.)player\.odycdn\.com$/i.test(u.hostname) &&
-        /^\/v6\/streams\/[^/]+\/[^/]+\.mp4$/i.test(u.pathname);
-    } catch { return false; }
-  };
-  // Rumble y Dailymotion (y cualquier otra fuente no-R2) van antes de R2,
-  // salvo Odysee V6 validado, que es preferible a fuentes que fallan al cargar.
+  // Priorizar Odysee como prueba principal: su URL capturada debe probarse
+  // desde Kino, sin que un preflight externo 401/429 descarte la fuente.
+  const isOdysee = (item) => /odysee/i.test(String(item.source.label || item.source.provider || ""));
   const isR2 = (item) =>
     /^r2$/i.test(String(item.source.label || item.source.provider || "").trim()) ||
     /(^|\.)videos\.donghualife\.com$/i.test(String(item.stream.url || ""));
   const usable = results.filter(Boolean).sort((a, b) =>
-    Number(isValidatedOdyseeV6(b)) - Number(isValidatedOdyseeV6(a)) ||
+    Number(isOdysee(b)) - Number(isOdysee(a)) ||
     Number(b.source.isWorking) - Number(a.source.isWorking) ||
     Number(isR2(a)) - Number(isR2(b)) ||
     a.source.priority - b.source.priority
