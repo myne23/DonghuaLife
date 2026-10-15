@@ -1801,6 +1801,36 @@ function nativeSourceSubtitleHints(source) {
   return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index);
 }
 
+async function resolveNativeSourceSubtitleTokens(source, pageUrl, sourceHeaders) {
+  const tracks = Array.isArray(source && source.subtitles) ? source.subtitles : [];
+  const found = [];
+  for (const track of tracks.slice(0, 10)) {
+    const token = typeof track === "string" && track.startsWith("token:")
+      ? track.slice(6)
+      : track && typeof track.token === "string" ? track.token
+      : track && typeof track.sourceToken === "string" ? track.sourceToken : "";
+    if (!token) continue;
+    try {
+      const response = await kino.fetch(BASE + "/api/player/source", {
+        method: "POST",
+        headers: sourceHeaders,
+        body: { json: { token } },
+        timeoutMs: 7000
+      });
+      if (!response.ok) continue;
+      const parsed = parseNativeSourceBody(response.text(), pageUrl);
+      const label = String(track && typeof track === "object" && (track.language || track.lang || track.label) || "es");
+      found.push(...parsed.subtitles.map((item) => ({
+        ...item,
+        lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : label.slice(0, 16)
+      })));
+    } catch (error) {
+      log("No se pudo resolver un token de subtítulo", String(error && error.message || error).slice(0, 80));
+    }
+  }
+  return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index);
+}
+
 async function resolveNativePlayerSources(html, pageUrl) {
   const payload = parsePlayerSourcePayload(html);
   if (!payload.sources.length) return null;
@@ -1844,7 +1874,10 @@ async function resolveNativePlayerSources(html, pageUrl) {
       }
       if (!stream) return null;
       const ownR2 = /(^|\.)videos\.donghualife\.com$/i.test(new URL(stream.url).hostname);
-      let subtitles = parsed.subtitles.concat(nativeSourceSubtitleHints(source));
+      let subtitles = parsed.subtitles.concat(
+        nativeSourceSubtitleHints(source),
+        await resolveNativeSourceSubtitleTokens(source, pageUrl, sourceHeaders)
+      );
       if (ownR2) {
         subtitles = subtitles.concat(await readNativeHlsSubtitles(stream.url));
         subtitles = subtitles.concat(await fetchNativeR2Subtitles(payload.episodeId, pageUrl, payload.sources));
