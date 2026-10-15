@@ -1404,19 +1404,105 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
 }
 
 async function resolveOdysee(providerUrl) {
-  if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   let parsed;
   try { parsed = new URL(providerUrl); } catch { return null; }
   if (!/(^|\.)odysee\.com$/i.test(parsed.hostname) || !/\/(?:\$\/)?embed\//i.test(parsed.pathname)) return null;
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+    "Origin": "https://odysee.com", "Referer": "https://odysee.com/",
+    "Accept": "application/json", "Content-Type": "application/json"
+  };
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const queryParam = (key) => { try { return parsed.searchParams.get(key); } catch { return null; } };
+  let uri = null;
+  try {
+    let segments = decodeURIComponent(parsed.pathname).split("/").filter(Boolean);
+    if (segments[0] === "$") segments = segments.slice(2);
+    else if (segments[0] === "embed") segments = segments.slice(1);
+    if (segments.length) uri = "lbry://" + segments.join("/").replace(/:/g, "#");
+  } catch {}
+  if (!uri || uri === "lbry://") {
+    log("Odysee API: no se pudo extraer la URI del embed");
+    return await resolveOdyseeCaptured(providerUrl);
+  }
+  const rpc = async (method, params) => {
+    const payload = JSON.stringify({ jsonrpc: "2.0", method, params });
+    let waitMs = 600;
+    for (let round = 1; round <= 4; round++) {
+      let response = null;
+      try {
+        response = await kino.fetch("https://api.na-backend.odysee.com/api/v1/proxy?m=" + encodeURIComponent(method), {
+          method: "POST", headers, body: payload, timeoutMs: 9000
+        });
+        if (response.ok) {
+          try {
+            const data = JSON.parse(await response.text());
+            if (data && !data.error) return data;
+            log("Odysee API " + method + ": respuesta JSON sin resultado válido");
+            return null;
+          } catch (error) {
+            log("Odysee API " + method + ": respuesta no JSON", String(error && error.message || error).slice(0, 80));
+            return null;
+          }
+        }
+        if (![429, 502, 503].includes(response.status)) {
+          log("Odysee API " + method + ": HTTP " + response.status + " (sin reintento)");
+          return null;
+        }
+        log("Odysee API " + method + ": HTTP " + response.status + ", intento " + round + "/4");
+      } catch (error) {
+        log("Odysee API " + method + ": error de red, intento " + round + "/4");
+      }
+      if (round < 4) {
+        let retryAfter = 0;
+        try { retryAfter = Number(response && response.headers && response.headers.get && response.headers.get("Retry-After")) * 1000; } catch {}
+        await pause(Math.min(retryAfter > 0 ? retryAfter : waitMs, 8000));
+        waitMs = Math.min(waitMs * 2, 8000);
+      }
+    }
+    return null;
+  };
+  const signature = queryParam("signature");
+  const signatureTs = queryParam("signature_ts");
+  log("Odysee API: resolviendo embed", "firmado=" + Boolean(signature), "signature_ts=" + Boolean(signatureTs));
+  const params = { uri, environment: "live" };
+  if (signature) params.signature = signature;
+  if (signatureTs) params.signature_ts = signatureTs;
+  const getResult = await rpc("get", params);
+  const streaming = getResult && getResult.result && getResult.result.streaming_url;
+  if (typeof streaming === "string" && /^https:\/\//i.test(streaming)) {
+    const type = /\.m3u8(?:[?#]|$)/i.test(streaming) ? "hls" : /\.webm(?:[?#]|$)/i.test(streaming) ? "webm" : "mp4";
+    let host = "";
+    try { host = new URL(streaming).hostname; } catch {}
+    log("Odysee API get: streaming_url encontrada", "host=" + host, "tipo=" + type);
+    return { url: streaming, mime: type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4",
+      label: ("Odysee · " + type.toUpperCase()).slice(0, 48),
+      headers: { "User-Agent": headers["User-Agent"], "Origin": "https://odysee.com", "Referer": "https://odysee.com/" } };
+  }
+  if (signature) {
+    log("Odysee API get: no devolvió streaming_url para embed firmado; no se construyen URLs públicas manuales");
+    return await resolveOdyseeCaptured(providerUrl);
+  }
+  const resolved = await rpc("resolve", { urls: [uri] });
+  const result = resolved && resolved.result;
+  const claim = result && (result[uri] || Object.values(result).find((value) => value && typeof value === "object"));
+  const claimId = claim && claim.claim_id;
+  const sdHash = claim && claim.value && claim.value.source && claim.value.source.sd_hash;
+  if (claimId && sdHash) {
+    const url = "https://player.odycdn.com/v6/streams/" + encodeURIComponent(claimId) + "/" + encodeURIComponent(sdHash) + ".mp4";
+    log("Odysee API resolve: claim público encontrado; se usa CDN MP4");
+    return { url, mime: "video/mp4", label: "Odysee · MP4",
+      headers: { "User-Agent": headers["User-Agent"], "Origin": "https://odysee.com", "Referer": "https://odysee.com/" } };
+  }
+  log("Odysee API resolve: sin claim_id/sd_hash; se intenta captura del reproductor");
+  return await resolveOdyseeCaptured(providerUrl);
+}
 
+async function resolveOdyseeCaptured(providerUrl) {
+  if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   const match = String.raw`(?:player|secure)\.odycdn\.com/(?:api/v[34]/streams/(?:free|paid)/|v[56]/streams/|[^?#]*\.(?:m3u8|mp4|webm))`;
   try {
-    const capture = await kino.browser.capture(providerUrl, {
-      timeoutMs: 18000,
-      autoplay: true,
-      match,
-      headers: { Referer: "https://odysee.com/" }
-    });
+    const capture = await kino.browser.capture(providerUrl, { timeoutMs: 18000, autoplay: true, match, headers: { Referer: "https://odysee.com/" } });
     const media = Array.isArray(capture && capture.media) ? capture.media : [];
     const supported = media.filter((item) => {
       if (!item || !/^https:\/\//i.test(String(item.url || ""))) return false;
@@ -1426,79 +1512,27 @@ async function resolveOdysee(providerUrl) {
       return /(^|\.)odycdn\.com$/i.test(u.hostname) &&
         (/mpegurl|m3u8|mp4|webm/.test(mime) || /\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(u.href));
     });
-    if (!supported.length) {
-      log("El navegador de Kino no capturó un medio Odysee compatible");
-      return null;
-    }
-
+    if (!supported.length) { log("Odysee fallback: el navegador no capturó un medio compatible"); return null; }
     const typeOf = (item) => {
-      const u = new URL(item.url);
-      const mime = String(item.mime || "").toLowerCase();
+      const u = new URL(item.url), mime = String(item.mime || "").toLowerCase();
       return /mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(u.href) ? "hls" :
         /webm/.test(mime) || /\.webm(?:[?#]|$)/i.test(u.href) ? "webm" : "mp4";
     };
-    supported.sort((a, b) => ({hls:0,mp4:1,webm:2}[typeOf(a)] - {hls:0,mp4:1,webm:2}[typeOf(b)]));
-    const original = supported[0];
-    const originalUrl = new URL(original.url);
-    const candidates = [];
-    candidates.push({ item: original, url: original.url, reason: "capturado" });
-    if (/^\/api\/v[34]\/streams\/free\//i.test(originalUrl.pathname)) {
-      const canonical = new URL(original.url);
-      canonical.hostname = "player.odycdn.com";
-      if (canonical.href !== original.url) {
-        candidates.push({ item: original, url: canonical.href, reason: "host-gratuito" });
-      }
-    }
-    for (const item of supported.slice(1)) {
-      if (!candidates.some((candidate) => candidate.url === item.url)) candidates.push({ item, url: item.url, reason: "alternativo-capturado" });
-    }
-
-    const safeHeaders = (item) => {
-      const source = item && item.headers && typeof item.headers === "object" ? item.headers : {};
-      const removed = Object.keys(source).filter((key) => /^access-control-request-/i.test(key)).length;
-      if (removed) log("Se filtraron cabeceras de preflight para reproducción Odysee", "eliminadas=" + removed);
-      const headers = Object.fromEntries(Object.entries(source).filter(([key, value]) =>
-        !/^access-control-request-/i.test(key) && typeof value === "string" &&
-        /^(accept|referer|origin|user-agent|cookie)$/i.test(key)
-      ));
-      if (!Object.keys(headers).some((key) => key.toLowerCase() === "referer")) headers.Referer = providerUrl;
-      if (!Object.keys(headers).some((key) => key.toLowerCase() === "origin")) headers.Origin = "https://odysee.com";
-      return headers;
-    };
-    let lastStatus = 0;
-    for (const candidate of candidates.slice(0, 4)) {
-      const headers = { ...safeHeaders(candidate.item), Range: "bytes=0-0" };
-      try {
-        const response = await kino.fetch(candidate.url, { method: "GET", headers, timeoutMs: 4500 });
-        lastStatus = response.status;
-        log("Prueba de URL Odysee", candidate.reason, new URL(candidate.url).hostname, "HTTP", response.status);
-        if (response.ok || response.status === 206) {
-          const url = response.url && /^https:\/\//i.test(response.url) ? response.url : candidate.url;
-          const type = typeOf(candidate.item);
-          return {
-            url,
-            mime: type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4",
-            label: ("Odysee · " + type.toUpperCase()).slice(0, 48),
-            headers: safeHeaders(candidate.item)
-          };
-        }
-      } catch (error) {
-        log("No se pudo comprobar URL Odysee", candidate.reason, String(error && error.message || error).slice(0, 90));
-      }
-    }
-    log("Odysee: ninguna URL superó la comprobación previa; se conserva la fuente capturada", "último_http=" + lastStatus);
-    return {
-      url: original.url,
-      mime: typeOf(original) === "hls" ? "application/vnd.apple.mpegurl" : typeOf(original) === "webm" ? "video/webm" : "video/mp4",
-      label: ("Odysee · " + typeOf(original).toUpperCase()).slice(0, 48),
-      headers: safeHeaders(original)
-    };
+    supported.sort((a, b) => ({ hls: 0, mp4: 1, webm: 2 }[typeOf(a)] - { hls: 0, mp4: 1, webm: 2 }[typeOf(b)]));
+    const chosen = supported[0], type = typeOf(chosen);
+    const sourceHeaders = chosen.headers && typeof chosen.headers === "object" ? chosen.headers : {};
+    const safeHeaders = Object.fromEntries(Object.entries(sourceHeaders).filter(([key, value]) =>
+      typeof value === "string" && /^(accept|referer|origin|user-agent|cookie)$/i.test(key)));
+    if (!Object.keys(safeHeaders).some((key) => key.toLowerCase() === "referer")) safeHeaders.Referer = providerUrl;
+    if (!Object.keys(safeHeaders).some((key) => key.toLowerCase() === "origin")) safeHeaders.Origin = "https://odysee.com";
+    log("Odysee fallback: medio capturado", "tipo=" + type);
+    return { url: chosen.url, mime: type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4",
+      label: ("Odysee · " + type.toUpperCase()).slice(0, 48), headers: safeHeaders };
   } catch (error) {
-    log("No se pudo resolver Odysee con el navegador de Kino", String(error && error.message || error).slice(0, 120));
+    log("Odysee fallback: error de captura", String(error && error.message || error).slice(0, 100));
     return null;
   }
 }
-
 async function resolveProviderUrl(providerUrl, referer, allowCapture) {
   if (allowCapture && /^https:\/\/(?:www\.)?odysee\.com\//i.test(providerUrl)) {
     const odysee = await resolveOdysee(providerUrl);
