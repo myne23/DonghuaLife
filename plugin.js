@@ -1776,8 +1776,17 @@ async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
       try { detailJson = JSON.parse(body); } catch {}
       const direct = detailJson && [detailJson.url, detailJson.src, detailJson.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
       if (direct && subtitleFormat(direct)) found.push({ lang: /^(es|spa|spanish|español)/i.test(String(detailJson.language || label)) ? "es" : label.slice(0, 16), url: direct, format: subtitleFormat(direct) });
-      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\s\S]*?-->|\[Script Info\])/i.test(detailJson.content.trimStart())) {
-        log("La API R2 entregó subtítulos inline; Kino necesita una URL pública VTT/SRT");
+      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\\s\\S]*?-->|\\[Script Info\\])/i.test(detailJson.content.trimStart())) {
+        const inline = detailJson.content.trimStart();
+        const inlineFormat = /^WEBVTT/i.test(inline) ? "vtt" :
+          /^\\[Script Info\\]/i.test(inline) ? "ass" : /-->/.test(inline) ? "srt" : "desconocido";
+        log("Diagnóstico de subtítulo R2 inline", JSON.stringify({
+          formato: inlineFormat,
+          caracteres: detailJson.content.length,
+          idioma: String(detailJson.language || detailJson.lang || label).slice(0, 16),
+          tieneTiempos: /\\d{2}:\\d{2}:\\d{2}[,.]\\d{1,3}/.test(inline),
+          claves: Object.keys(detailJson).filter((key) => /content|format|type|lang|label|url|mime/i.test(key)).slice(0, 12)
+        }));
       }
     } catch (error) {
       log("No se pudo consultar una pista R2", String(error && error.message || error).slice(0, 80));
@@ -1898,10 +1907,39 @@ async function resolveNativePlayerSources(html, pageUrl) {
       return null;
     }
   }));
-  const selected = results.filter(Boolean).sort((a, b) =>
+  const usable = results.filter(Boolean).sort((a, b) =>
     Number(b.source.isWorking) - Number(a.source.isWorking) || a.source.priority - b.source.priority
-  )[0];
-  if (selected) return selected.stream;
+  );
+  const selected = usable[0];
+  if (selected) {
+    // Resolver varias fuentes no alcanza: Kino recibe un único Stream.
+    // Adjuntamos las demás que realmente se resolvieron como copias etiquetadas,
+    // para que aparezcan en el menú «Servidor» sin reemplazar la fuente principal.
+    const alternatives = Array.isArray(selected.stream.alternatives) ? selected.stream.alternatives.slice() : [];
+    const seen = new Set([selected.stream.url]);
+    for (const item of usable) {
+      if (item === selected || alternatives.length >= 8) continue;
+      const alternate = item.stream;
+      if (!alternate || typeof alternate.url !== "string" || !/^https:\\/\\//i.test(alternate.url) || seen.has(alternate.url)) continue;
+      seen.add(alternate.url);
+      const kind = /mpegurl|m3u8/i.test(String(alternate.mime || alternate.url)) ? "HLS" :
+        /webm/i.test(String(alternate.mime || alternate.url)) ? "WEBM" :
+        /mp4/i.test(String(alternate.mime || alternate.url)) ? "MP4" : "";
+      const label = String(item.source.label || alternate.label || sourceLabel(alternate.url));
+      alternatives.push({
+        label: (label + (kind ? " · " + kind : "")).slice(0, 48),
+        url: alternate.url,
+        ...(alternate.mime ? { mime: alternate.mime } : {}),
+        ...(alternate.headers && Object.keys(alternate.headers).length ? { headers: alternate.headers } : {})
+      });
+    }
+    if (alternatives.length) selected.stream.alternatives = alternatives.slice(0, 8);
+    log("Fuentes reproducibles del reproductor", JSON.stringify({
+      principal: String(selected.source.label || sourceLabel(selected.stream.url)).slice(0, 48),
+      alternativas: (selected.stream.alternatives || []).map((item) => item.label).slice(0, 8)
+    }));
+    return selected.stream;
+  }
   log("El payload Next.js contenía fuentes, pero la API no devolvió una URL reproducible");
   return null;
 }
