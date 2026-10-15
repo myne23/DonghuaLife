@@ -222,18 +222,58 @@ function parseInfo(html, slug) {
   return { title: title.slice(0, 200), poster: poster ? posterUrl(poster) : undefined, backdrop: poster ? posterUrl(poster) : undefined, overview, year: year ? year[0] : undefined };
 }
 
-function parseSeasonPosters(html) {
+function parseSeasonPosters(html, pageUrl) {
+  const source = decodeHtml(String(html || ""));
   const posters = new Map();
-  const images = String(html || "").match(/<img\b[^>]*>/gi) || [];
+  const images = source.match(/<img\b[^>]*>/gi) || [];
+  const imageUrl = (tag) => {
+    const raw = attr(tag, "data-src") || attr(tag, "data-lazy-src") ||
+      attr(tag, "data-original") || attr(tag, "data-image") || attr(tag, "src") ||
+      (attr(tag, "srcset").split(",").pop() || "").trim().split(/\s+/)[0] ||
+      (attr(tag, "data-srcset").split(",").pop() || "").trim().split(/\s+/)[0];
+    if (raw) return posterUrl(raw, pageUrl);
+    const style = /background-image\s*:\s*url\((['"]?)(.*?)\1\)/i.exec(attr(tag, "style"));
+    return style ? posterUrl(style[2], pageUrl) : "";
+  };
+  // First pass: image accessibility labels are the most reliable season marker.
   for (const image of images) {
     const label = [attr(image, "alt"), attr(image, "title"), attr(image, "aria-label")].join(" ");
-    const match = /\btemporada\s*(\d{1,3})\b/i.exec(label);
-    if (!match) continue;
-    const raw = attr(image, "data-src") || attr(image, "data-lazy-src") ||
-      attr(image, "data-original") || attr(image, "src");
-    const poster = raw ? posterUrl(raw) : "";
-    const number = Number(match[1]);
-    if (poster && number > 0 && !posters.has(number)) posters.set(number, poster);
+    const match = /temporada\s*(\d{1,3})/i.exec(label);
+    const poster = imageUrl(image);
+    const number = match ? Number(match[1]) : 0;
+    if (poster && number > 0 && number <= 50 && !posters.has(number)) posters.set(number, poster);
+  }
+  // Some page layouts put the season label beside the image rather than in its alt.
+  // Associate each visible "Temporada N" with the nearest image in its local card.
+  const seasonLabels = /temporada\s*(\d{1,3})/gi;
+  let labelMatch;
+  while ((labelMatch = seasonLabels.exec(source))) {
+    const number = Number(labelMatch[1]);
+    if (number < 1 || number > 50 || posters.has(number)) continue;
+    const start = Math.max(0, labelMatch.index - 1200);
+    const end = Math.min(source.length, labelMatch.index + labelMatch[0].length + 1200);
+    const window = source.slice(start, end);
+    const candidates = window.match(/<img\b[^>]*>/gi) || [];
+    let best = "";
+    let bestDistance = Infinity;
+    for (const image of candidates) {
+      const poster = imageUrl(image);
+      if (!poster) continue;
+      const at = source.indexOf(image, start);
+      const distance = Math.abs(at - labelMatch.index);
+      if (distance < bestDistance) { best = poster; bestDistance = distance; }
+    }
+    if (!best) {
+      const bg = /background-image\s*:\s*url\((['"]?)(.*?)\1\)/gi;
+      let m;
+      while ((m = bg.exec(window))) {
+        const candidate = posterUrl(m[2], pageUrl);
+        if (!candidate) continue;
+        const distance = Math.abs(start + m.index - labelMatch.index);
+        if (distance < bestDistance) { best = candidate; bestDistance = distance; }
+      }
+    }
+    if (best) posters.set(number, best);
   }
   return posters;
 }
@@ -258,8 +298,13 @@ function parseEpisodes(html, pageUrl) {
     const innerImageForVip = /<img\b[^>]*>/i.exec(match[3]);
     const imageLabelForVip = innerImageForVip
       ? (attr(innerImageForVip[0], "alt") || attr(innerImageForVip[0], "title")) : "";
-    // Los capítulos VIP no deben aparecer como reproducibles para usuarios sin VIP.
-    if (/\bVIP\b/i.test([linkLabel, imageLabelForVip, attr(match[0], "aria-label"), attr(match[0], "title")].join(" "))) {
+    // En la web el distintivo puede quedar pegado al número ("Episodio 4VIP"),
+    // por eso no usamos límites de palabra. También detectamos el badge hermano
+    // que aparece justo después del enlace y antes de la siguiente tarjeta.
+    const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 700));
+    const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
+    const afterLink = nextEpisodeLink ? tail.slice(0, nextEpisodeLink.index) : tail.slice(0, 260);
+    if (/VIP/i.test([linkLabel, imageLabelForVip, attr(match[0], "aria-label"), attr(match[0], "title"), afterLink].join(" "))) {
       seen.add(path);
       continue;
     }
@@ -1001,6 +1046,7 @@ export async function episodes(ref) {
   // anuncian varias temporadas. Cada ruta /watch/<serie>-<temporada>-1 contiene la
   // lista real de esa temporada; la consultamos cuando la ficha no trae la lista entera.
   const seasonCount = declaredSeasonCount(html);
+  const seasonPosters = parseSeasonPosters(html, detailUrl);
   const firstEpisode = list.find((episode) => !episode.specialMovie);
   if (seasonCount > 1 && firstEpisode) {
     for (let number = 1; number <= seasonCount; number++) {
@@ -1012,6 +1058,9 @@ export async function episodes(ref) {
       try {
         const seasonUrl = absolute(route, detailUrl);
         const seasonHtml = await getText(seasonUrl);
+        for (const [posterSeason, poster] of parseSeasonPosters(seasonHtml, seasonUrl)) {
+          if (!seasonPosters.has(posterSeason)) seasonPosters.set(posterSeason, poster);
+        }
         const seasonList = seasonItems(parseEpisodes(seasonHtml, seasonUrl), number);
         if (seasonList.length > existing.length) {
           list = list.filter((episode) => episode.specialMovie || episode.season !== number);
@@ -1059,9 +1108,8 @@ export async function episodes(ref) {
   }
 
   const effectiveSeason = selectedSeason || seasonNumbers[0] || 1;
-  // DonghuaLife usa una portada distinta para cada tarjeta de temporada. Al cambiar
-  // de temporada, devolvemos esa imagen como portada de la ficha seleccionada.
-  const seasonPosters = parseSeasonPosters(html);
+  // La imagen de temporada puede aparecer solo en la página del episodio inicial
+  // de esa temporada, ya consultada arriba; reutilizamos ese mapa antes del fallback.
   const selectedSeasonPoster = seasonPosters.get(effectiveSeason);
   if (selectedSeasonPoster) {
     info.poster = selectedSeasonPoster;
@@ -1952,14 +2000,14 @@ async function resolveNativePlayerSources(html, pageUrl) {
       return null;
     }
   }));
-  // R2 vuelve a ser la fuente preferida porque es la que suele ofrecer subtítulos externos.
-  // Si R2 no se resuelve, se conserva la prioridad y disponibilidad de las otras fuentes.
+  // Rumble y Dailymotion (y cualquier otra fuente no-R2) van antes de R2.
+  // Mantenemos el orden de prioridad del sitio entre fuentes de igual tipo.
   const isR2 = (item) =>
     /^r2$/i.test(String(item.source.label || item.source.provider || "").trim()) ||
     /(^|\.)videos\.donghualife\.com$/i.test(String(item.stream.url || ""));
   const usable = results.filter(Boolean).sort((a, b) =>
     Number(b.source.isWorking) - Number(a.source.isWorking) ||
-    Number(isR2(b)) - Number(isR2(a)) ||
+    Number(isR2(a)) - Number(isR2(b)) ||
     a.source.priority - b.source.priority
   );
   const selected = usable[0];
