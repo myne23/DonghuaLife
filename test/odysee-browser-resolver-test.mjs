@@ -36,6 +36,7 @@ globalThis.kino = {
       assert.equal(url, embedUrl);
       assert.equal(options.autoplay, true);
       assert.match(options.match, /odycdn/);
+      assert.ok(new RegExp(options.match, "i").test(secureUrl), "El filtro de captura debe coincidir con la URL real del medio");
       return {finalUrl:embedUrl,subtitles:[],media:[{url:secureUrl,mime:"video/mp4",headers:{
         accept:"*/*",
         "access-control-request-headers":"range,content-type",
