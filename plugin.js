@@ -1369,14 +1369,14 @@ async function resolveDailymotion(url, referer) {
 async function resolveOdyseeDirectMedia(mediaUrl, stream) {
   let original;
   try { original = new URL(mediaUrl); } catch { return stream; }
-  if (!/(^|\\.)odycdn\\.com$/i.test(original.hostname)) return stream;
+  if (!/(^|\.)odycdn\.com$/i.test(original.hostname)) return stream;
 
   const headers = { Accept: "*/*", Referer: "https://odysee.com/", Origin: "https://odysee.com" };
-  const candidates = [{ url: original.href, reason: "capturado", type: /\\.m3u8(?:[?#]|$)/i.test(original.pathname) ? "hls" : "mp4" }];
+  const candidates = [{ url: original.href, reason: "capturado", type: /\.m3u8(?:[?#]|$)/i.test(original.pathname) ? "hls" : "mp4" }];
 
   // El endpoint /api/v3/streams/free suele exponer claim y sd_hash en el path.
   // Probamos la ruta pública /v6 que usa el resolvedor nativo para videos públicos.
-  const legacy = /^\\/api\\/v[34]\\/streams\\/free\\/([^/]+)\\/([^/]+)\\/[^/]+$/i.exec(original.pathname);
+  const legacy = /^\/api\/v[34]\/streams\/free\/([^/]+)\/([^/]+)\/[^/]+$/i.exec(original.pathname);
   if (legacy) {
     const claimId = legacy[1], sdHash = legacy[2];
     candidates.unshift(
