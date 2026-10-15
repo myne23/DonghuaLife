@@ -1776,15 +1776,15 @@ async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
       try { detailJson = JSON.parse(body); } catch {}
       const direct = detailJson && [detailJson.url, detailJson.src, detailJson.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
       if (direct && subtitleFormat(direct)) found.push({ lang: /^(es|spa|spanish|español)/i.test(String(detailJson.language || label)) ? "es" : label.slice(0, 16), url: direct, format: subtitleFormat(direct) });
-      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\\s\\S]*?-->|\\[Script Info\\])/i.test(detailJson.content.trimStart())) {
+      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\s\S]*?-->|\[Script Info\])/i.test(detailJson.content.trimStart())) {
         const inline = detailJson.content.trimStart();
         const inlineFormat = /^WEBVTT/i.test(inline) ? "vtt" :
-          /^\\[Script Info\\]/i.test(inline) ? "ass" : /-->/.test(inline) ? "srt" : "desconocido";
+          /^\[Script Info\]/i.test(inline) ? "ass" : /-->/.test(inline) ? "srt" : "desconocido";
         log("Diagnóstico de subtítulo R2 inline", JSON.stringify({
           formato: inlineFormat,
           caracteres: detailJson.content.length,
           idioma: String(detailJson.language || detailJson.lang || label).slice(0, 16),
-          tieneTiempos: /\\d{2}:\\d{2}:\\d{2}[,.]\\d{1,3}/.test(inline),
+          tieneTiempos: /\d{2}:\d{2}:\d{2}[,.]\d{1,3}/.test(inline),
           claves: Object.keys(detailJson).filter((key) => /content|format|type|lang|label|url|mime/i.test(key)).slice(0, 12)
         }));
       }
