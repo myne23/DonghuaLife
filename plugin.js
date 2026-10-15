@@ -2300,12 +2300,23 @@ async function resolveNativePlayerSources(html, pageUrl) {
       return null;
     }
   }));
-  // Rumble y Dailymotion (y cualquier otra fuente no-R2) van antes de R2.
-  // Mantenemos el orden de prioridad del sitio entre fuentes de igual tipo.
+  // Si Odysee entregó una URL V6 válida tras la comprobación HTTP, preferirla:
+  // evita iniciar automáticamente Rumble cuando su CDN responde 401/429.
+  const isValidatedOdyseeV6 = (item) => {
+    if (!/odysee/i.test(String(item.source.label || item.source.provider || ""))) return false;
+    try {
+      const u = new URL(String(item.stream.url || ""));
+      return /(^|\.)player\.odycdn\.com$/i.test(u.hostname) &&
+        /^\/v6\/streams\/[^/]+\/[^/]+\.mp4$/i.test(u.pathname);
+    } catch { return false; }
+  };
+  // Rumble y Dailymotion (y cualquier otra fuente no-R2) van antes de R2,
+  // salvo Odysee V6 validado, que es preferible a fuentes que fallan al cargar.
   const isR2 = (item) =>
     /^r2$/i.test(String(item.source.label || item.source.provider || "").trim()) ||
     /(^|\.)videos\.donghualife\.com$/i.test(String(item.stream.url || ""));
   const usable = results.filter(Boolean).sort((a, b) =>
+    Number(isValidatedOdyseeV6(b)) - Number(isValidatedOdyseeV6(a)) ||
     Number(b.source.isWorking) - Number(a.source.isWorking) ||
     Number(isR2(a)) - Number(isR2(b)) ||
     a.source.priority - b.source.priority
