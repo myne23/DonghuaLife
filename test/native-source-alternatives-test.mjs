@@ -8,7 +8,8 @@ const dmUrl = "https://cdndirector.dailymotion.com/cdn/manifest/video/abc123.m3u
 const html = '<html><script id="__NEXT_DATA__" type="application/json">' +
   JSON.stringify({props:{pageProps:{episodeId:"episode-source-test",playerConfig:{sources:[
     {label:"R2",token:"token-r2-test",provider:"R2",priority:1,isWorking:true},
-    {label:"Dailymotion",token:"token-dm-test",provider:"dailymotion",priority:2,isWorking:true}
+    {label:"Dailymotion",token:"token-dm-test",provider:"dailymotion",priority:2,isWorking:true},
+    {label:"Rumble",token:"token-rumble-test",provider:"rumble",priority:3,isWorking:true}
   ]}}}}) +
   '</script></html>';
 
@@ -28,7 +29,11 @@ globalThis.kino = {
       if (token === "token-dm-test") {
         return {ok:true,status:200,headers:{"content-type":"application/json"},text(){return JSON.stringify({url:embedUrl});}};
       }
+      if (token === "token-rumble-test") {
+        return {ok:true,status:200,headers:{"content-type":"application/json"},text(){return JSON.stringify({url:"https://rumble.com/embed/vabc123/"});}};
+      }
     }
+    if (url === "https://rumble.com/embed/vabc123/") throw new Error("Simular que la extracción anticipada de Rumble no responde");
     if (url === "https://www.dailymotion.com/player/metadata/video/abc123") {
       return {ok:true,status:200,headers:{"content-type":"application/json"},text(){return JSON.stringify({qualities:{auto:[{url:dmUrl}]}});}};
     }
@@ -51,6 +56,9 @@ const r2 = stream.alternatives.find((item) => /^r2/i.test(item.label));
 assert.ok(r2, "R2 debe seguir disponible en el menú de servidores");
 assert.equal(r2.url, masterUrl);
 assert.equal(r2.mime, "application/vnd.apple.mpegurl");
+const rumble = stream.alternatives.find((item) => /rumble/i.test(item.label));
+assert.ok(rumble && rumble.ref, "Rumble debe seguir seleccionable aunque falle la extracción anticipada");
+assert.match(rumble.ref, /^native-token:/);
 assert.ok(logs.some((line) => line.includes("Fuentes reproducibles del reproductor") && line.includes("R2")));
 
 console.log("Fuentes nativas: Dailymotion va primero y R2 permanece disponible como alternativa.");
