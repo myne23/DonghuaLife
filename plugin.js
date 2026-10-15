@@ -1399,18 +1399,53 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
       "Referer": "https://odysee.com/",
       "Origin": "https://odysee.com"
     };
+    const apiPost = async (method, params) => {
+      const response = await kino.fetch(
+        "https://api.na-backend.odysee.com/api/v1/proxy?m=" + method,
+        {
+          method: "POST",
+          headers: apiHeaders,
+          body: JSON.stringify({ method, params }),
+          timeoutMs: 8000
+        }
+      );
+      let data = null;
+      try { data = JSON.parse(response.text()); } catch {}
+      return { status: response.status, ok: response.ok, data };
+    };
+
+    // Igual que el cliente de Odysee: resolver primero la claim y luego pedir
+    // get usando la URI corta/canónica, no asumir que el nombre del path CDN es el slug.
+    let canonicalUri = uri;
+    try {
+      const resolved = await apiPost("resolve", { urls: [uri] });
+      const result = resolved.data && resolved.data.result;
+      const claim = result && (result[uri] || result[uri.toLowerCase()] ||
+        (Array.isArray(result) ? result[0] : null));
+      const canonical = claim && (
+        claim.short_url || claim.canonical_url || claim.canonicalUrl ||
+        claim.url || claim.permanent_url || claim.permanentUrl
+      );
+      if (resolved.ok && canonical && /^lbry:\/\//i.test(String(canonical))) {
+        canonicalUri = String(canonical);
+        log("Odysee API resolve: URI canónica encontrada", "campos=" +
+          Object.keys(claim).filter((key) => /url|claim|name|canonical/i.test(key)).slice(0, 12).join(","));
+      } else {
+        const keys = claim && typeof claim === "object" ? Object.keys(claim).slice(0, 16).join(",") :
+          result && typeof result === "object" ? Object.keys(result).slice(0, 12).join(",") : "sin_resultado";
+        log("Odysee API resolve: sin URI canónica", "HTTP=" + resolved.status, "campos=" + keys);
+      }
+    } catch (error) {
+      log("Odysee API resolve: error de red/JSON; se prueba URI original");
+    }
+
     let waitMs = 500;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const response = await kino.fetch("https://api.na-backend.odysee.com/api/v1/proxy?m=get", {
-          method: "POST",
-          headers: apiHeaders,
-          body: JSON.stringify({ jsonrpc: "2.0", method: "get", params: { uri, environment: "live" } }),
-          timeoutMs: 8000
-        });
+        const response = await apiPost("get", { uri: canonicalUri, environment: "live" });
+        const data = response.data;
+        const candidate = data && !data.error && data.result && data.result.streaming_url;
         if (response.ok) {
-          const data = JSON.parse(response.text());
-          const candidate = data && !data.error && data.result && data.result.streaming_url;
           if (typeof candidate === "string" && /^https:\/\//i.test(candidate)) {
             let candidateUrl;
             try { candidateUrl = new URL(candidate); } catch {}
@@ -1422,7 +1457,10 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
               log("Odysee API get: streaming_url con host inesperado; se conserva URL de origen");
             }
           } else {
-            log("Odysee API get: sin streaming_url; se conserva URL de origen");
+            const resultKeys = data && data.result && typeof data.result === "object"
+              ? Object.keys(data.result).slice(0, 16).join(",") : "sin_resultado";
+            log("Odysee API get: sin streaming_url", "HTTP=" + response.status, "campos=" + resultKeys,
+              "uriCanonica=" + (canonicalUri !== uri));
           }
           break;
         }
