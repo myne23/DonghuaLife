@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 
+const logs = [];
+
 globalThis.kino = {
-  log() {},
+  log(...args) { logs.push(args.join(" ")); },
   error(code, message) {
     const error = new Error(message);
     error.code = code;
@@ -29,5 +31,6 @@ assert.equal(stream.mime, "application/vnd.apple.mpegurl");
 assert.equal(stream.label, "R2 · HLS");
 assert.equal(stream.headers.Referer, "https://donghualife.com/");
 assert.equal(stream.headers.Origin, "https://donghualife.com");
+assert.ok(logs.some((line) => line.includes("Fuente R2 resuelta desde HTML/JSON público, sin captura de red")));
 
 console.log("R2 nativo correcto: URL extraída del HTML, sin usar browser.capture.");
