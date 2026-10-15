@@ -1209,7 +1209,7 @@ function isDirectMediaUrl(value) {
 function sourceHostAllowed(value) {
   try {
     const host = new URL(value).hostname.toLowerCase();
-    return /(?:^|\.)(?:videos\.donghualife\.com|dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|vk\.com|vkvideo\.ru|doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
+    return /(?:^|\.)(?:videos\.donghualife\.com|dailymotion\.com|dai\.ly|dmcdn\.net|rumble\.com|odysee\.com|(?:player|secure)\.odycdn\.com|voe\.sx|voe\.to|ok\.ru|okcdn\.ru|mycdn\.me|userapi\.com|vkuser\.net|vk\.com|vkvideo\.ru|doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co|cdnvideo\.ru|r2\.dev|r2\.cloudflarestorage\.com|cloudflarestorage\.com|cloudflarestream\.com|videodelivery\.net)$/.test(host);
   } catch { return false; }
 }
 
@@ -1366,7 +1366,107 @@ async function resolveDailymotion(url, referer) {
   return null;
 }
 
+async function resolveOdysee(providerUrl) {
+  if (!kino.browser || typeof kino.browser.capture !== "function") return null;
+  let parsed;
+  try { parsed = new URL(providerUrl); } catch { return null; }
+  if (!/(^|\.)odysee\.com$/i.test(parsed.hostname) || !/\/(?:\$\/)?embed\//i.test(parsed.pathname)) return null;
+
+  const match = String.raw`(?:player|secure)\.odycdn\.com/(?:api/v[34]/streams/(?:free|paid)/|v[56]/streams/|[^?#]*\.(?:m3u8|mp4|webm))`;
+  try {
+    const capture = await kino.browser.capture(providerUrl, {
+      timeoutMs: 18000,
+      autoplay: true,
+      match,
+      headers: { Referer: "https://odysee.com/" }
+    });
+    const media = Array.isArray(capture && capture.media) ? capture.media : [];
+    const supported = media.filter((item) => {
+      if (!item || !/^https:\/\//i.test(String(item.url || ""))) return false;
+      const mime = String(item.mime || "").toLowerCase();
+      let u;
+      try { u = new URL(item.url); } catch { return false; }
+      return /(^|\.)odycdn\.com$/i.test(u.hostname) &&
+        (/mpegurl|m3u8|mp4|webm/.test(mime) || /\.(?:m3u8|mp4|webm)(?:[?#]|$)/i.test(u.href));
+    });
+    if (!supported.length) {
+      log("El navegador de Kino no capturó un medio Odysee compatible");
+      return null;
+    }
+
+    const typeOf = (item) => {
+      const u = new URL(item.url);
+      const mime = String(item.mime || "").toLowerCase();
+      return /mpegurl|m3u8/.test(mime) || /\.m3u8(?:[?#]|$)/i.test(u.href) ? "hls" :
+        /webm/.test(mime) || /\.webm(?:[?#]|$)/i.test(u.href) ? "webm" : "mp4";
+    };
+    supported.sort((a, b) => ({hls:0,mp4:1,webm:2}[typeOf(a)] - {hls:0,mp4:1,webm:2}[typeOf(b)]));
+    const original = supported[0];
+    const originalUrl = new URL(original.url);
+    const candidates = [];
+    candidates.push({ item: original, url: original.url, reason: "capturado" });
+    if (/^\/api\/v[34]\/streams\/free\//i.test(originalUrl.pathname)) {
+      const canonical = new URL(original.url);
+      canonical.hostname = "player.odycdn.com";
+      if (canonical.href !== original.url) {
+        candidates.push({ item: original, url: canonical.href, reason: "host-gratuito" });
+      }
+    }
+    for (const item of supported.slice(1)) {
+      if (!candidates.some((candidate) => candidate.url === item.url)) candidates.push({ item, url: item.url, reason: "alternativo-capturado" });
+    }
+
+    const safeHeaders = (item) => {
+      const source = item && item.headers && typeof item.headers === "object" ? item.headers : {};
+      const removed = Object.keys(source).filter((key) => /^access-control-request-/i.test(key)).length;
+      if (removed) log("Se filtraron cabeceras de preflight para reproducción Odysee", "eliminadas=" + removed);
+      const headers = Object.fromEntries(Object.entries(source).filter(([key, value]) =>
+        !/^access-control-request-/i.test(key) && typeof value === "string" &&
+        /^(accept|referer|origin|user-agent|cookie)$/i.test(key)
+      ));
+      if (!Object.keys(headers).some((key) => key.toLowerCase() === "referer")) headers.Referer = providerUrl;
+      if (!Object.keys(headers).some((key) => key.toLowerCase() === "origin")) headers.Origin = "https://odysee.com";
+      return headers;
+    };
+    let lastStatus = 0;
+    for (const candidate of candidates.slice(0, 4)) {
+      const headers = { ...safeHeaders(candidate.item), Range: "bytes=0-0" };
+      try {
+        const response = await kino.fetch(candidate.url, { method: "GET", headers, timeoutMs: 4500 });
+        lastStatus = response.status;
+        log("Prueba de URL Odysee", candidate.reason, new URL(candidate.url).hostname, "HTTP", response.status);
+        if (response.ok || response.status === 206) {
+          const url = response.url && /^https:\/\//i.test(response.url) ? response.url : candidate.url;
+          const type = typeOf(candidate.item);
+          return {
+            url,
+            mime: type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4",
+            label: ("Odysee · " + type.toUpperCase()).slice(0, 48),
+            headers: safeHeaders(candidate.item)
+          };
+        }
+      } catch (error) {
+        log("No se pudo comprobar URL Odysee", candidate.reason, String(error && error.message || error).slice(0, 90));
+      }
+    }
+    log("Odysee: ninguna URL superó la comprobación previa; se conserva la fuente capturada", "último_http=" + lastStatus);
+    return {
+      url: original.url,
+      mime: typeOf(original) === "hls" ? "application/vnd.apple.mpegurl" : typeOf(original) === "webm" ? "video/webm" : "video/mp4",
+      label: ("Odysee · " + typeOf(original).toUpperCase()).slice(0, 48),
+      headers: safeHeaders(original)
+    };
+  } catch (error) {
+    log("No se pudo resolver Odysee con el navegador de Kino", String(error && error.message || error).slice(0, 120));
+    return null;
+  }
+}
+
 async function resolveProviderUrl(providerUrl, referer, allowCapture) {
+  if (allowCapture && /^https:\/\/(?:www\.)?odysee\.com\//i.test(providerUrl)) {
+    const odysee = await resolveOdysee(providerUrl);
+    if (odysee) return odysee;
+  }
   const direct = directStream(providerUrl);
   if (direct) return direct;
   if (/(?:ok\.ru\/(?:video|videoembed)|(?:doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co)\/)/i.test(providerUrl)) {
