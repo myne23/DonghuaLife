@@ -222,6 +222,22 @@ function parseInfo(html, slug) {
   return { title: title.slice(0, 200), poster: poster ? posterUrl(poster) : undefined, backdrop: poster ? posterUrl(poster) : undefined, overview, year: year ? year[0] : undefined };
 }
 
+function parseSeasonPosters(html) {
+  const posters = new Map();
+  const images = String(html || "").match(/<img\\b[^>]*>/gi) || [];
+  for (const image of images) {
+    const label = [attr(image, "alt"), attr(image, "title"), attr(image, "aria-label")].join(" ");
+    const match = /\\btemporada\\s*(\\d{1,3})\\b/i.exec(label);
+    if (!match) continue;
+    const raw = attr(image, "data-src") || attr(image, "data-lazy-src") ||
+      attr(image, "data-original") || attr(image, "src");
+    const poster = raw ? posterUrl(raw) : "";
+    const number = Number(match[1]);
+    if (poster && number > 0 && !posters.has(number)) posters.set(number, poster);
+  }
+  return posters;
+}
+
 function parseEpisodes(html, pageUrl) {
   const out = [];
   const seen = new Set();
@@ -239,6 +255,14 @@ function parseEpisodes(html, pageUrl) {
     try { path = new URL(url).pathname; } catch { continue; }
     if (seen.has(path)) continue;
     const linkLabel = textOf(match[3]);
+    const innerImageForVip = /<img\\b[^>]*>/i.exec(match[3]);
+    const imageLabelForVip = innerImageForVip
+      ? (attr(innerImageForVip[0], "alt") || attr(innerImageForVip[0], "title")) : "";
+    // Los capítulos VIP no deben aparecer como reproducibles para usuarios sin VIP.
+    if (/\\bVIP\\b/i.test([linkLabel, imageLabelForVip, attr(match[0], "aria-label"), attr(match[0], "title")].join(" "))) {
+      seen.add(path);
+      continue;
+    }
     // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
     const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
@@ -1035,6 +1059,14 @@ export async function episodes(ref) {
   }
 
   const effectiveSeason = selectedSeason || seasonNumbers[0] || 1;
+  // DonghuaLife usa una portada distinta para cada tarjeta de temporada. Al cambiar
+  // de temporada, devolvemos esa imagen como portada de la ficha seleccionada.
+  const seasonPosters = parseSeasonPosters(html);
+  const selectedSeasonPoster = seasonPosters.get(effectiveSeason);
+  if (selectedSeasonPoster) {
+    info.poster = selectedSeasonPoster;
+    info.backdrop = selectedSeasonPoster;
+  }
   const selectedEpisodes = regularEpisodes.filter((episode) => episode.season === effectiveSeason);
   if (selectedSeason && !selectedEpisodes.length) {
     throw kino.error("not_found", "No se encontraron episodios para la temporada " + selectedSeason);
@@ -1736,125 +1768,73 @@ async function readNativeHlsSubtitles(masterUrl) {
   }
 }
 
-async function probeRawR2SubtitleUrl(id, headers, language) {
-  const candidates = [
-    { url: BASE + "/api/subtitles/" + id + "?format=srt", variant: "format=srt" },
-    { url: BASE + "/api/subtitles/" + id + "?format=vtt", variant: "format=vtt" },
-    { url: BASE + "/api/subtitles/" + id + "?raw=1", variant: "raw=1" },
-    { url: BASE + "/api/subtitles/" + id + ".srt", variant: "suffix=.srt" }
-  ];
-  // Probe en paralelo para que cuatro variantes no sumen hasta 14 s al inicio.
-  const responses = await Promise.all(candidates.map(async (candidate) => {
-    try {
-      const response = await kino.fetch(candidate.url, {
-        headers: { ...headers, Accept: "text/vtt,application/x-subrip,text/plain,*/*" },
-        timeoutMs: 3500
-      });
-      return { candidate, response };
-    } catch (error) {
-      return { candidate, error };
-    }
-  }));
-  for (const result of responses) {
-    const { candidate, response, error } = result;
-    if (error) {
-      log("Falló la prueba de entrega directa de subtítulos R2", candidate.variant, String(error && error.message || error).slice(0, 80));
-      continue;
-    }
-    if (!response.ok) {
-      log("Prueba de entrega directa de subtítulos R2", candidate.variant, "HTTP", response.status);
-      continue;
-    }
-    const body = response.text().replace(/^\uFEFF/, "").trimStart();
-    let format = "";
-    if (/^WEBVTT(?:\s|$)/i.test(body)) format = "vtt";
-    else if (/\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/m.test(body)) format = "srt";
-    if (!format) {
-      log("La variante de subtítulo R2 no devuelve VTT/SRT directo", candidate.variant,
-        JSON.stringify({ contentType: String(response.headers["content-type"] || "").slice(0, 60), json: /^\s*[\[{]/.test(body), ass: /^\s*\[Script Info\]/i.test(body) }));
-      continue;
-    }
-    log("Subtítulo R2 disponible como archivo directo", JSON.stringify({ variante: candidate.variant, formato: format, caracteres: body.length }));
-    return {
-      lang: /^(es|spa|spanish|español)/i.test(String(language || "es")) ? "es" : String(language || "es").slice(0, 16),
-      url: candidate.url,
-      format
-    };
-  }
-  return null;
-}
-
 async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
   const headers = { Accept: "application/json,*/*", Referer: pageUrl, Origin: BASE };
-  const found = [];
   const tracks = [];
-  let probedRawDelivery = false;
   if (episodeId) {
     try {
-      const response = await kino.fetch(BASE + "/api/subtitles?episodeId=" + encodeURIComponent(episodeId), { headers, timeoutMs: 7000 });
+      const response = await kino.fetch(BASE + "/api/subtitles?episodeId=" + encodeURIComponent(episodeId), {
+        headers, timeoutMs: 3000
+      });
       if (response.ok) {
         const json = response.json();
         if (Array.isArray(json && json.subtitles)) tracks.push(...json.subtitles.slice(0, 10));
       }
     } catch (error) {
-      log("No se pudo consultar la lista oficial de subtítulos R2", String(error && error.message || error).slice(0, 100));
+      log("No se pudo consultar la lista oficial de subtítulos R2", String(error && error.message || error).slice(0, 80));
     }
   }
   for (const source of sourceRecords || []) {
     for (const id of source.uuids || []) {
-      if (typeof id === "string" && /^[0-9a-f-]{32,36}$/i.test(id) && !tracks.some((track) => track && String(track.id || track.uuid || "") === id)) {
+      if (typeof id === "string" && /^[0-9a-f-]{32,36}$/i.test(id) &&
+          !tracks.some((track) => track && String(track.id || track.uuid || "") === id)) {
         tracks.push({ id, language: "es" });
       }
     }
   }
-  for (const track of tracks.slice(0, 15)) {
-    if (!track || typeof track !== "object") continue;
-    const label = String(track.language || track.label || "es");
-    const url = [track.url, track.src, track.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
-    if (url && subtitleFormat(url)) {
-      found.push({ lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : label.slice(0, 16), url, format: subtitleFormat(url) });
-      continue;
-    }
+  // Como máximo consultamos el detalle de una pista española. No hacemos sondeos
+  // especulativos de URL: ralentizaban la resolución y el endpoint oficial entrega ASS inline.
+  const ordered = tracks.filter((track) => track && typeof track === "object").sort((a, b) =>
+    Number(/^(es|spa|spanish|español)/i.test(String(b.language || b.lang || b.label || ""))) -
+    Number(/^(es|spa|spanish|español)/i.test(String(a.language || a.lang || a.label || "")))
+  );
+  for (const track of ordered.slice(0, 1)) {
+    const label = String(track.language || track.lang || track.label || "es");
+    const url = [track.url, track.src, track.file].find((value) =>
+      typeof value === "string" && /^https?:\/\//i.test(value) && subtitleFormat(value));
+    if (url) return [{
+      lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : label.slice(0, 16),
+      url, format: subtitleFormat(url)
+    }];
     const id = String(track.id || track.uuid || "");
     if (!/^[0-9a-f-]{32,36}$/i.test(id)) continue;
     try {
-      const detail = await kino.fetch(BASE + "/api/subtitles/" + id, { headers, timeoutMs: 5000 });
+      const detail = await kino.fetch(BASE + "/api/subtitles/" + id, { headers, timeoutMs: 3000 });
       if (!detail.ok) continue;
       const body = detail.text().trim();
-      let detailJson = null;
-      try { detailJson = JSON.parse(body); } catch {}
-      const direct = detailJson && [detailJson.url, detailJson.src, detailJson.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
-      if (direct && subtitleFormat(direct)) found.push({ lang: /^(es|spa|spanish|español)/i.test(String(detailJson.language || label)) ? "es" : label.slice(0, 16), url: direct, format: subtitleFormat(direct) });
-      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\s\S]*?-->|\[Script Info\])/i.test(detailJson.content.trimStart())) {
-        const inline = detailJson.content.trimStart();
-        const inlineFormat = /^WEBVTT/i.test(inline) ? "vtt" :
-          /^\[Script Info\]/i.test(inline) ? "ass" : /-->/.test(inline) ? "srt" : "desconocido";
-        log("Diagnóstico de subtítulo R2 inline", JSON.stringify({
-          formato: inlineFormat,
-          caracteres: detailJson.content.length,
-          idioma: String(detailJson.language || detailJson.lang || label).slice(0, 16),
-          // ASS usa Dialogue: con tiempos H:MM:SS.cc, no la marca SRT HH:MM:SS,mmm.
-          tieneTiempos: /Dialogue:\s*[^,]*(?:,\d+){2,}/i.test(inline) || /\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/.test(inline),
-          dialogos: (inline.match(/^Dialogue:/gim) || []).length,
-          claves: Object.keys(detailJson).filter((key) => /content|format|type|lang|label|url|mime/i.test(key)).slice(0, 12)
-        }));
-        // Kino solo acepta URLs VTT/SRT en Stream.subtitles. El endpoint habitual
-        // devuelve JSON con content, así que probamos variantes públicas de entrega
-        // directa; solo exponemos una URL si su respuesta ES el archivo VTT/SRT.
-        const subtitleLanguage = String(detailJson.language || detailJson.lang || label);
-        // Solo se sondea una pista española por episodio: no multiplicar peticiones
-        // si el sitio devuelve varias pistas inline.
-        if (!probedRawDelivery && /^(es|spa|spanish|español)/i.test(subtitleLanguage)) {
-          probedRawDelivery = true;
-          const directTrack = await probeRawR2SubtitleUrl(id, headers, subtitleLanguage);
-          if (directTrack) found.push(directTrack);
+      let json = null;
+      try { json = JSON.parse(body); } catch {}
+      const direct = json && [json.url, json.src, json.file].find((value) =>
+        typeof value === "string" && /^https?:\/\//i.test(value) && subtitleFormat(value));
+      if (direct) {
+        return [{
+          lang: /^(es|spa|spanish|español)/i.test(String(json.language || json.lang || label)) ? "es" : label.slice(0, 16),
+          url: direct, format: subtitleFormat(direct)
+        }];
+      }
+      if (json && typeof json.content === "string") {
+        const inline = json.content.trimStart();
+        if (/^\[Script Info\]/i.test(inline)) {
+          log("Subtítulo R2 encontrado en ASS inline; Kino requiere una URL VTT/SRT");
+        } else if (/^WEBVTT/i.test(inline) || /-->/.test(inline)) {
+          log("Subtítulo R2 inline disponible, pero no se adjunta sin una URL directa compatible");
         }
       }
     } catch (error) {
-      log("No se pudo consultar una pista R2", String(error && error.message || error).slice(0, 80));
+      log("No se pudo consultar el detalle del subtítulo R2", String(error && error.message || error).slice(0, 80));
     }
   }
-  return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index).slice(0, 10);
+  return [];
 }
 
 function nativeSourceSubtitleHints(source) {
@@ -1969,15 +1949,14 @@ async function resolveNativePlayerSources(html, pageUrl) {
       return null;
     }
   }));
-  // Si hay una fuente no-R2 reproducible, la priorizamos porque R2 solo entrega
-  // subtítulos ASS inline que Kino no puede consumir como pista. R2 sigue disponible
-  // en «Servidor» y vuelve a ser principal si ninguna otra fuente se resolvió.
+  // R2 vuelve a ser la fuente preferida porque es la que suele ofrecer subtítulos externos.
+  // Si R2 no se resuelve, se conserva la prioridad y disponibilidad de las otras fuentes.
   const isR2 = (item) =>
     /^r2$/i.test(String(item.source.label || item.source.provider || "").trim()) ||
     /(^|\.)videos\.donghualife\.com$/i.test(String(item.stream.url || ""));
   const usable = results.filter(Boolean).sort((a, b) =>
     Number(b.source.isWorking) - Number(a.source.isWorking) ||
-    Number(isR2(a)) - Number(isR2(b)) ||
+    Number(isR2(b)) - Number(isR2(a)) ||
     a.source.priority - b.source.priority
   );
   const selected = usable[0];
