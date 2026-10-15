@@ -33,7 +33,8 @@ globalThis.kino = {
 const plugin = await import("../plugin.js?season-vip-poster-test=1");
 const first = await plugin.episodes("vip-show");
 assert.deepEqual(first.episodes.filter(episode => episode.season === 1).map(episode => episode.number), [1,2,3], "El capítulo VIP de la temporada 1 no debe listarse");
-assert.deepEqual(first.episodes.filter(episode => episode.season === 3).map(episode => episode.number), [1,2,3], "La temporada 3 debe mostrar solo los capítulos 1–3 y excluir el capítulo 4 VIP");
+const thirdSeason = await plugin.episodes(first.seasons.find(season => season.number === 3).ref);
+assert.deepEqual(thirdSeason.episodes.map(episode => episode.number), [1,2,3], "La temporada 3 debe mostrar solo los capítulos 1–3 y excluir el capítulo 4 VIP");
 assert.equal(first.seasons.length, 4, "Debe conservar las cuatro temporadas");
 assert.equal(first.series.poster, "https://donghualife.com/images/season-1.jpg", "La ficha debe usar la portada de la temporada actual");
 const fourth = await plugin.episodes(first.seasons[3].ref);
