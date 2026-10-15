@@ -1366,6 +1366,43 @@ async function resolveDailymotion(url, referer) {
   return null;
 }
 
+async function resolveOdyseeDirectMedia(mediaUrl, stream) {
+  let original;
+  try { original = new URL(mediaUrl); } catch { return stream; }
+  if (!/^(?:player|secure)\.odycdn\.com$/i.test(original.hostname)) return stream;
+
+  const candidates = [{ url: original.href, reason: "API-directo" }];
+  if (/^\/api\/v[34]\/streams\/free\//i.test(original.pathname)) {
+    const publicHost = new URL(original.href);
+    publicHost.hostname = "player.odycdn.com";
+    if (publicHost.href !== original.href) candidates.push({ url: publicHost.href, reason: "API-host-gratuito" });
+  }
+  const headers = { Accept: "*/*", Referer: "https://odysee.com/", Origin: "https://odysee.com" };
+  let lastStatus = 0;
+  for (const candidate of candidates) {
+    try {
+      const response = await kino.fetch(candidate.url, {
+        method: "GET",
+        headers: { ...headers, Range: "bytes=0-0" },
+        timeoutMs: 4500
+      });
+      lastStatus = response.status;
+      log("Prueba de URL Odysee API", candidate.reason, new URL(candidate.url).hostname, "HTTP", response.status);
+      if (response.ok || response.status === 206) {
+        return {
+          ...stream,
+          url: response.url && /^https:\/\//i.test(response.url) ? response.url : candidate.url,
+          headers
+        };
+      }
+    } catch (error) {
+      log("No se pudo comprobar URL Odysee API", candidate.reason, String(error && error.message || error).slice(0, 90));
+    }
+  }
+  log("Odysee API: ninguna URL superó la comprobación previa; se conserva la URL original", "último_http=" + lastStatus);
+  return { ...stream, headers };
+}
+
 async function resolveOdysee(providerUrl) {
   if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   let parsed;
@@ -2146,6 +2183,9 @@ async function resolveNativePlayerSources(html, pageUrl) {
         parsed.urls[0];
       if (!direct) return null;
       let stream = directStream(direct);
+      if (stream && /^(?:player|secure)\.odycdn\.com$/i.test(new URL(direct).hostname)) {
+        stream = await resolveOdyseeDirectMedia(direct, stream);
+      }
       if (!stream && /(^|\.)videos\.donghualife\.com$/i.test(new URL(direct).hostname)) {
         stream = {
           url: direct,
