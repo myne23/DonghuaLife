@@ -1736,6 +1736,45 @@ async function readNativeHlsSubtitles(masterUrl) {
   }
 }
 
+async function probeRawR2SubtitleUrl(id, headers, language) {
+  const candidates = [
+    { url: BASE + "/api/subtitles/" + id + "?format=srt", variant: "format=srt" },
+    { url: BASE + "/api/subtitles/" + id + "?format=vtt", variant: "format=vtt" },
+    { url: BASE + "/api/subtitles/" + id + "?raw=1", variant: "raw=1" },
+    { url: BASE + "/api/subtitles/" + id + ".srt", variant: "suffix=.srt" }
+  ];
+  for (const candidate of candidates) {
+    try {
+      const response = await kino.fetch(candidate.url, {
+        headers: { ...headers, Accept: "text/vtt,application/x-subrip,text/plain,*/*" },
+        timeoutMs: 3500
+      });
+      if (!response.ok) {
+        log("Prueba de entrega directa de subtítulos R2", candidate.variant, "HTTP", response.status);
+        continue;
+      }
+      const body = response.text().replace(/^\uFEFF/, "").trimStart();
+      let format = "";
+      if (/^WEBVTT(?:\s|$)/i.test(body)) format = "vtt";
+      else if (/\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/m.test(body)) format = "srt";
+      if (!format) {
+        log("La variante de subtítulo R2 no devuelve VTT/SRT directo", candidate.variant,
+          JSON.stringify({ contentType: String(response.headers["content-type"] || "").slice(0, 60), json: /^\s*[\[{]/.test(body), ass: /^\s*\[Script Info\]/i.test(body) }));
+        continue;
+      }
+      log("Subtítulo R2 disponible como archivo directo", JSON.stringify({ variante: candidate.variant, formato: format, caracteres: body.length }));
+      return {
+        lang: /^(es|spa|spanish|español)/i.test(String(language || "es")) ? "es" : String(language || "es").slice(0, 16),
+        url: candidate.url,
+        format
+      };
+    } catch (error) {
+      log("Falló la prueba de entrega directa de subtítulos R2", candidate.variant, String(error && error.message || error).slice(0, 80));
+    }
+  }
+  return null;
+}
+
 async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
   const headers = { Accept: "application/json,*/*", Referer: pageUrl, Origin: BASE };
   const found = [];
@@ -1784,9 +1823,16 @@ async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
           formato: inlineFormat,
           caracteres: detailJson.content.length,
           idioma: String(detailJson.language || detailJson.lang || label).slice(0, 16),
-          tieneTiempos: /\d{2}:\d{2}:\d{2}[,.]\d{1,3}/.test(inline),
+          // ASS usa Dialogue: con tiempos H:MM:SS.cc, no la marca SRT HH:MM:SS,mmm.
+          tieneTiempos: /Dialogue:\s*[^,]*(?:,\d+){2,}/i.test(inline) || /\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/.test(inline),
+          dialogos: (inline.match(/^Dialogue:/gim) || []).length,
           claves: Object.keys(detailJson).filter((key) => /content|format|type|lang|label|url|mime/i.test(key)).slice(0, 12)
         }));
+        // Kino solo acepta URLs VTT/SRT en Stream.subtitles. El endpoint habitual
+        // devuelve JSON con content, así que probamos variantes públicas de entrega
+        // directa; solo exponemos una URL si su respuesta ES el archivo VTT/SRT.
+        const directTrack = await probeRawR2SubtitleUrl(id, headers, detailJson.language || detailJson.lang || label);
+        if (directTrack) found.push(directTrack);
       }
     } catch (error) {
       log("No se pudo consultar una pista R2", String(error && error.message || error).slice(0, 80));
