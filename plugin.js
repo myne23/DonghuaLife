@@ -1969,8 +1969,16 @@ async function resolveNativePlayerSources(html, pageUrl) {
       return null;
     }
   }));
+  // Si hay una fuente no-R2 reproducible, la priorizamos porque R2 solo entrega
+  // subtítulos ASS inline que Kino no puede consumir como pista. R2 sigue disponible
+  // en «Servidor» y vuelve a ser principal si ninguna otra fuente se resolvió.
+  const isR2 = (item) =>
+    /^r2$/i.test(String(item.source.label || item.source.provider || "").trim()) ||
+    /(^|\.)videos\.donghualife\.com$/i.test(String(item.stream.url || ""));
   const usable = results.filter(Boolean).sort((a, b) =>
-    Number(b.source.isWorking) - Number(a.source.isWorking) || a.source.priority - b.source.priority
+    Number(b.source.isWorking) - Number(a.source.isWorking) ||
+    Number(isR2(a)) - Number(isR2(b)) ||
+    a.source.priority - b.source.priority
   );
   const selected = usable[0];
   if (selected) {
