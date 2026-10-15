@@ -1518,6 +1518,389 @@ async function capturePageStream(url) {
   }
 }
 
+
+
+function decodePlayerJsonText(value) {
+  return decodeHtml(String(value || ""))
+    .replace(/\\u0026/gi, "&").replace(/\\u003d/gi, "=")
+    .replace(/\\u002f/gi, "/").replace(/\\u003a/gi, ":")
+    .replace(/\\u002e/gi, ".").replace(/\\x2f/gi, "/")
+    .replace(/\\x3a/gi, ":").replace(/\\x2e/gi, ".")
+    .replace(/\\\\\//g, "/");
+}
+
+function scanJsonObjects(text, output, limit) {
+  const source = String(text || "");
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  let attempts = 0;
+  for (let i = 0; i < source.length && attempts < (limit || 3000); i++) {
+    const char = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') { inString = true; continue; }
+    if (char === "{") stack.push(i);
+    else if (char === "}" && stack.length) {
+      const start = stack.pop();
+      if (i - start > 100000) continue;
+      attempts++;
+      try {
+        const node = JSON.parse(source.slice(start, i + 1));
+        if (node && typeof node === "object" && !Array.isArray(node)) output.push(node);
+      } catch {}
+    }
+  }
+}
+
+function parsePlayerSourcePayload(html) {
+  const source = decodePlayerJsonText(html);
+  const objects = [];
+  const visitedStrings = new Set();
+  const scanText = (text, depth) => {
+    if (depth > 3 || !text || visitedStrings.has(text)) return;
+    visitedStrings.add(text);
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === "object") objects.push(parsed);
+      else if (typeof parsed === "string" && parsed !== text) scanText(parsed, depth + 1);
+    } catch {}
+    scanJsonObjects(text, objects, 2500);
+  };
+  const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+  let script;
+  while ((script = scriptRe.exec(source))) {
+    const body = script[1].trim();
+    if (!body) continue;
+    scanText(body, 0);
+    // Next.js Flight serializes its payload as a JavaScript string inside push([n, "..."]).
+    const flightRe = /(?:self\.)?__next_f\.push\(\s*\[\s*\d+\s*,\s*("(?:\\.|[^"\\])*")\s*\]\s*\)/g;
+    let flight;
+    while ((flight = flightRe.exec(body))) {
+      try { scanText(JSON.parse(flight[1]), 1); } catch {}
+    }
+  }
+  // Some frameworks inline the player JSON outside script tags.
+  scanText(source, 0);
+
+  const records = [];
+  const seen = new Set();
+  const walk = (node, depth) => {
+    if (!node || depth > 12) return;
+    if (typeof node === "string") {
+      if (node.length < 300000 && /(?:token|provider|episodeId|subtitle)/i.test(node)) scanText(node, 1);
+      return;
+    }
+    if (Array.isArray(node)) { for (const item of node) walk(item, depth + 1); return; }
+    if (typeof node !== "object") return;
+    const token = [node.token, node.sourceToken, node.source_token].find((v) => typeof v === "string" && v.trim());
+    const provider = [node.provider, node.type, node.source].find((v) => typeof v === "string" && v.trim());
+    const label = [node.label, node.name, node.title].find((v) => typeof v === "string" && v.trim());
+    if (token && (provider || label) && token.length <= 2000) {
+      const key = token.trim();
+      if (!seen.has(key)) {
+        seen.add(key);
+        records.push({
+          token: key,
+          provider: String(provider || label || "Fuente").slice(0, 60),
+          label: String(label || provider || "Fuente").slice(0, 80),
+          priority: Number.isFinite(Number(node.priority)) ? Number(node.priority) : 100,
+          isWorking: node.isWorking !== false && node.is_working !== false,
+          uuids: Array.isArray(node.uuids) ? node.uuids.filter((v) => typeof v === "string") : [],
+          subtitles: Array.isArray(node.subtitles) ? node.subtitles : []
+        });
+      }
+    }
+    for (const value of Object.values(node)) walk(value, depth + 1);
+  };
+  for (const node of objects) walk(node, 0);
+
+  // Keep source priority deterministic; working sources first, then the site's priority.
+  records.sort((a, b) => Number(b.isWorking) - Number(a.isWorking) || a.priority - b.priority);
+  let episodeId = "";
+  const episodeRe = /\\?["'](?:episodeId|episode_id|episodeID)\\?["']\s*:\s*\\?["']([^"'\\\\]{1,120})\\?["']/i;
+  const episodeMatch = episodeRe.exec(source);
+  if (episodeMatch) episodeId = episodeMatch[1];
+  return { sources: records.slice(0, 10), episodeId };
+}
+
+function subtitleFormat(url) {
+  let path = String(url || "");
+  try { path = new URL(path).pathname; } catch {}
+  if (/\.srt$/i.test(path)) return "srt";
+  if (/\.vtt$/i.test(path)) return "vtt";
+  return "";
+}
+
+function isSubtitleUrl(url) {
+  return /\.(?:vtt|srt)(?:[?#]|$)/i.test(String(url || ""));
+}
+
+function parseNativeSourceBody(body, pageUrl) {
+  const urls = [];
+  const subtitles = [];
+  const addUrl = (raw, subtitleHint) => {
+    if (typeof raw !== "string" || !raw.trim()) return;
+    let url = raw.trim().replace(/\\u0026/gi, "&").replace(/\\\//g, "/").replace(/&amp;/gi, "&");
+    try { url = new URL(url, pageUrl).href; } catch { return; }
+    if (!/^https:\/\//i.test(url) || !sourceHostAllowed(url)) return;
+    if (subtitleHint || isSubtitleUrl(url)) {
+      if (subtitleFormat(url)) subtitles.push({ url, lang: "es", format: subtitleFormat(url) });
+    } else if (isDirectMediaUrl(url) || /(^|\.)videos\.donghualife\.com$/i.test(new URL(url).hostname)) {
+      urls.push(url);
+    }
+  };
+  const walk = (node, key, depth) => {
+    if (depth > 12 || node == null) return;
+    const lower = String(key || "").toLowerCase();
+    const subtitleHint = /subtitle|caption|track|subtitulo/.test(lower);
+    if (typeof node === "string") {
+      if (/^\s*</.test(node) && /<iframe\b/i.test(node)) {
+        const iframe = /<iframe\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/i.exec(node);
+        if (iframe) addUrl(iframe[2], subtitleHint);
+      } else if (/^https?:\/\//i.test(node) || node.startsWith("//")) addUrl(node, subtitleHint);
+      else if (/\.m3u8|\.mp4|\.webm/i.test(node)) {
+        const match = /https?:\/\/[^\s"'<>\\]+/i.exec(node);
+        if (match) addUrl(match[0], subtitleHint);
+      }
+      return;
+    }
+    if (Array.isArray(node)) { for (const item of node) walk(item, key, depth + 1); return; }
+    if (typeof node === "object") {
+      for (const [childKey, value] of Object.entries(node)) {
+        if (/(?:image|poster|thumbnail|avatar|logo|cover|banner)/i.test(childKey)) continue;
+        walk(value, childKey, depth + 1);
+      }
+    }
+  };
+  const trimmed = String(body || "").trim();
+  let parsed = null;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try { parsed = JSON.parse(trimmed); } catch {}
+  }
+  if (parsed != null) walk(parsed, "", 0);
+  else if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("//")) addUrl(trimmed, false);
+  else {
+    const iframe = /<iframe\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/i.exec(trimmed);
+    if (iframe) addUrl(iframe[2], false);
+    const direct = /https?:\/\/[^\s"'<>\\]+/ig;
+    let match;
+    while ((match = direct.exec(trimmed))) addUrl(match[0], isSubtitleUrl(match[0]));
+  }
+  return {
+    urls: Array.from(new Set(urls)),
+    subtitles: subtitles.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index)
+  };
+}
+
+async function readNativeHlsSubtitles(masterUrl) {
+  if (!kino.fetch || !masterUrl) return [];
+  try {
+    const response = await kino.fetch(masterUrl, {
+      headers: { Referer: BASE + "/", Origin: BASE },
+      timeoutMs: 6000
+    });
+    if (!response.ok) return [];
+    const body = response.text();
+    if (!body.trimStart().startsWith("#EXTM3U")) return [];
+    const found = [];
+    for (const line of body.split(/\r?\n/)) {
+      if (!/^#EXT-X-MEDIA:/i.test(line) || !/TYPE=SUBTITLES/i.test(line)) continue;
+      const uri = /\bURI="([^"]+)"/i.exec(line)?.[1];
+      if (!uri) continue;
+      let url;
+      try { url = new URL(uri, masterUrl).href; } catch { continue; }
+      let label = /\bNAME="([^"]+)"/i.exec(line)?.[1] || /\bLANGUAGE="([^"]+)"/i.exec(line)?.[1] || "Español";
+      if (/\.m3u8(?:[?#]|$)/i.test(url)) {
+        try {
+          const playlist = await kino.fetch(url, { headers: { Referer: masterUrl, Origin: BASE }, timeoutMs: 5000 });
+          const entries = playlist.ok ? playlist.text().split(/\r?\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith("#")) : [];
+          if (entries.length === 1) url = new URL(entries[0], url).href;
+        } catch {}
+      }
+      const format = subtitleFormat(url);
+      if (format) found.push({ lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : String(label).slice(0, 16), url, format });
+    }
+    return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index).slice(0, 10);
+  } catch (error) {
+    log("No se pudieron leer las pistas de subtítulos del manifiesto HLS", String(error && error.message || error).slice(0, 100));
+    return [];
+  }
+}
+
+async function fetchNativeR2Subtitles(episodeId, pageUrl, sourceRecords) {
+  const headers = { Accept: "application/json,*/*", Referer: pageUrl, Origin: BASE };
+  const found = [];
+  const tracks = [];
+  if (episodeId) {
+    try {
+      const response = await kino.fetch(BASE + "/api/subtitles?episodeId=" + encodeURIComponent(episodeId), { headers, timeoutMs: 7000 });
+      if (response.ok) {
+        const json = response.json();
+        if (Array.isArray(json && json.subtitles)) tracks.push(...json.subtitles.slice(0, 10));
+      }
+    } catch (error) {
+      log("No se pudo consultar la lista oficial de subtítulos R2", String(error && error.message || error).slice(0, 100));
+    }
+  }
+  for (const source of sourceRecords || []) {
+    for (const id of source.uuids || []) {
+      if (typeof id === "string" && /^[0-9a-f-]{32,36}$/i.test(id) && !tracks.some((track) => track && String(track.id || track.uuid || "") === id)) {
+        tracks.push({ id, language: "es" });
+      }
+    }
+  }
+  for (const track of tracks.slice(0, 15)) {
+    if (!track || typeof track !== "object") continue;
+    const label = String(track.language || track.label || "es");
+    const url = [track.url, track.src, track.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
+    if (url && subtitleFormat(url)) {
+      found.push({ lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : label.slice(0, 16), url, format: subtitleFormat(url) });
+      continue;
+    }
+    const id = String(track.id || track.uuid || "");
+    if (!/^[0-9a-f-]{32,36}$/i.test(id)) continue;
+    try {
+      const detail = await kino.fetch(BASE + "/api/subtitles/" + id, { headers, timeoutMs: 5000 });
+      if (!detail.ok) continue;
+      const body = detail.text().trim();
+      let detailJson = null;
+      try { detailJson = JSON.parse(body); } catch {}
+      const direct = detailJson && [detailJson.url, detailJson.src, detailJson.file].find((v) => typeof v === "string" && /^https?:\/\//i.test(v));
+      if (direct && subtitleFormat(direct)) found.push({ lang: /^(es|spa|spanish|español)/i.test(String(detailJson.language || label)) ? "es" : label.slice(0, 16), url: direct, format: subtitleFormat(direct) });
+      if (detailJson && typeof detailJson.content === "string" && /^(?:WEBVTT|[\s\S]*?-->|\[Script Info\])/i.test(detailJson.content.trimStart())) {
+        log("La API R2 entregó subtítulos inline; Kino necesita una URL pública VTT/SRT");
+      }
+    } catch (error) {
+      log("No se pudo consultar una pista R2", String(error && error.message || error).slice(0, 80));
+    }
+  }
+  return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index).slice(0, 10);
+}
+
+function nativeSourceSubtitleHints(source) {
+  const found = [];
+  const walk = (node, depth) => {
+    if (depth > 6 || node == null) return;
+    if (Array.isArray(node)) { for (const item of node) walk(item, depth + 1); return; }
+    if (typeof node !== "object") return;
+    const lang = String(node.language || node.lang || node.label || "es");
+    for (const key of ["url", "src", "file", "subtitleUrl", "subtitle_url"]) {
+      const url = node[key];
+      if (typeof url === "string" && /^https:\/\//i.test(url) && subtitleFormat(url)) {
+        found.push({ lang: /^(es|spa|spanish|español)/i.test(lang) ? "es" : lang.slice(0, 16), url, format: subtitleFormat(url) });
+      }
+    }
+    for (const value of Object.values(node)) walk(value, depth + 1);
+  };
+  walk(source && source.subtitles, 0);
+  return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index);
+}
+
+async function resolveNativeSourceSubtitleTokens(source, pageUrl, sourceHeaders) {
+  const tracks = Array.isArray(source && source.subtitles) ? source.subtitles : [];
+  const found = [];
+  for (const track of tracks.slice(0, 10)) {
+    const token = typeof track === "string" && track.startsWith("token:")
+      ? track.slice(6)
+      : track && typeof track.token === "string" ? track.token
+      : track && typeof track.sourceToken === "string" ? track.sourceToken : "";
+    if (!token) continue;
+    try {
+      const response = await kino.fetch(BASE + "/api/player/source", {
+        method: "POST",
+        headers: sourceHeaders,
+        body: { json: { token } },
+        timeoutMs: 7000
+      });
+      if (!response.ok) continue;
+      const parsed = parseNativeSourceBody(response.text(), pageUrl);
+      const label = String(track && typeof track === "object" && (track.language || track.lang || track.label) || "es");
+      found.push(...parsed.subtitles.map((item) => ({
+        ...item,
+        lang: /^(es|spa|spanish|español)/i.test(label) ? "es" : label.slice(0, 16)
+      })));
+    } catch (error) {
+      log("No se pudo resolver un token de subtítulo", String(error && error.message || error).slice(0, 80));
+    }
+  }
+  return found.filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index);
+}
+
+async function resolveNativePlayerSources(html, pageUrl) {
+  const payload = parsePlayerSourcePayload(html);
+  if (!payload.sources.length) return null;
+  log("Fuentes del reproductor encontradas en payload Next.js", JSON.stringify(
+    payload.sources.map((item) => ({ provider: item.provider, label: item.label, working: item.isWorking, priority: item.priority }))
+  ));
+  const sourceHeaders = {
+    Accept: "application/json,text/plain,*/*",
+    "Content-Type": "application/json",
+    Origin: BASE,
+    Referer: pageUrl
+  };
+  const results = await Promise.all(payload.sources.slice(0, 6).map(async (source) => {
+    try {
+      const response = await kino.fetch(BASE + "/api/player/source", {
+        method: "POST",
+        headers: sourceHeaders,
+        body: { json: { token: source.token } },
+        timeoutMs: 10000
+      });
+      if (!response.ok) {
+        log("La API de fuentes respondió HTTP", response.status, "para", source.label);
+        return null;
+      }
+      const body = response.text().trim();
+      const parsed = parseNativeSourceBody(body, pageUrl);
+      const direct = parsed.urls.find((candidate) => isDirectMediaUrl(candidate) ||
+        /(^|\.)videos\.donghualife\.com$/i.test(new URL(candidate).hostname));
+      if (!direct) return null;
+      let stream = directStream(direct);
+      if (!stream && /(^|\.)videos\.donghualife\.com$/i.test(new URL(direct).hostname)) {
+        stream = {
+          url: direct,
+          mime: "application/vnd.apple.mpegurl",
+          label: "R2 · HLS",
+          headers: { Referer: BASE + "/", Origin: BASE }
+        };
+      }
+      if (!stream) {
+        stream = await resolveProviderUrl(direct, pageUrl, false);
+      }
+      if (!stream) return null;
+      const ownR2 = /(^|\.)videos\.donghualife\.com$/i.test(new URL(stream.url).hostname);
+      let subtitles = parsed.subtitles.concat(
+        nativeSourceSubtitleHints(source),
+        await resolveNativeSourceSubtitleTokens(source, pageUrl, sourceHeaders)
+      );
+      if (ownR2) {
+        subtitles = subtitles.concat(await readNativeHlsSubtitles(stream.url));
+        subtitles = subtitles.concat(await fetchNativeR2Subtitles(payload.episodeId, pageUrl, payload.sources));
+      }
+      if (subtitles.length) stream.subtitles = subtitles
+        .filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index)
+        .slice(0, 10)
+        .map((item) => ({ lang: item.lang || "es", url: item.url, format: item.format || subtitleFormat(item.url) || "vtt" }));
+      log("Fuente resuelta por API propia de DonghuaLife", source.label, stream.mime);
+      return { stream, source };
+    } catch (error) {
+      log("No se pudo resolver una fuente desde la API propia", source.label, String(error && error.message || error).slice(0, 100));
+      return null;
+    }
+  }));
+  const selected = results.filter(Boolean).sort((a, b) =>
+    Number(b.source.isWorking) - Number(a.source.isWorking) || a.source.priority - b.source.priority
+  )[0];
+  if (selected) return selected.stream;
+  log("El payload Next.js contenía fuentes, pero la API no devolvió una URL reproducible");
+  return null;
+}
+
 export async function resolve(ref) {
   const path = String(ref || "");
   // Las referencias de servidores son URLs absolutas y deben tratarse antes de
@@ -1559,6 +1942,11 @@ export async function resolve(ref) {
       if (providerStream) return providerStream;
     }
   }
+
+  // Primero usamos la API oficial del reproductor: Next.js -> token -> /api/player/source.
+  // Esto evita depender de que browser.capture vea el manifiesto HLS.
+  const native = await resolveNativePlayerSources(html, url);
+  if (native) return native;
 
   // Resolvers propios: inspeccionamos las URLs de proveedores incluidas en el HTML
   // hidratado, resolvemos primero fuentes directas/metadatos y dejamos las demás como
