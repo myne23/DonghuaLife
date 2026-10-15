@@ -319,9 +319,12 @@ function parseEpisodes(html, pageUrl) {
     const vipContext = [
       linkLabel, imageLabelForVip, match[0],
       attr(match[0], "aria-label"), attr(match[0], "title"),
-      beforeLink, afterLink
+      afterLink
     ].join(" ");
-    if (/VIP/i.test(vipContext)) {
+    // En el prefijo solo aceptamos marcadores VIP estructurales o una insignia
+    // cuyo texto sea exactamente «VIP»; no el nombre de la serie (p. ej. «VIP Show»).
+    const vipBeforeLink = /(?:\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em)>)/i.test(beforeLink);
+    if (/VIP/i.test(vipContext) || vipBeforeLink) {
       seen.add(path);
       continue;
     }
