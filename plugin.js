@@ -1256,9 +1256,12 @@ function capturedStream(capture) {
     if (!item || !/^https:\/\//i.test(String(item.url || "")) || !mediaType(item)) return false;
     try {
       const u = new URL(String(item.url));
-      // Dailymotion sometimes emits an error callback URL with a .m3u8-looking path;
-      // it is a player error signal, not an alternate stream.
+      // Dailymotion puede solicitar /cdn/manifest/video/<id>.m3u8 para anuncios
+      // y responder VMAP/XML, no un manifiesto HLS reproducible. No entregar ese
+      // endpoint publicitario directamente al reproductor de Kino.
       if (u.searchParams.has("error")) return false;
+      if (/^dmxleo\.dailymotion\.com$/i.test(u.hostname) &&
+          /\/cdn\/manifest\/video\//i.test(u.pathname)) return false;
     } catch { return false; }
     return true;
   }).sort((a, b) => rank(a) - rank(b));
@@ -1372,7 +1375,27 @@ async function capturePageStream(url) {
   if (!kino.browser || typeof kino.browser.capture !== "function") return null;
   try {
     const capture = await kino.browser.capture(url, { timeoutMs: 18000, autoplay: true });
-    // No validamos HLS con kino.fetch: esa petición puede recibir HTML/JSON
+    // La captura de Dailymotion puede confundir el manifiesto de anuncios VMAP
+    // con el video porque ambos terminan en .m3u8. Si encontramos el ID en esa
+    // ruta, consultar primero la metadata pública, que contiene qualities.auto
+    // con la fuente real de reproducción.
+    const capturedMedia = Array.isArray(capture && capture.media) ? capture.media : [];
+    for (const item of capturedMedia) {
+      try {
+        const capturedUrl = new URL(String(item && item.url || ""));
+        if (!/^dmxleo\.dailymotion\.com$/i.test(capturedUrl.hostname)) continue;
+        const videoId = /\/cdn\/manifest\/video\/([a-z0-9]+)\.m3u8$/i.exec(capturedUrl.pathname)?.[1] || "";
+        if (!videoId) continue;
+        const resolved = await resolveDailymotion("https://www.dailymotion.com/video/" + videoId, url);
+        if (resolved) {
+          log("Fuente real de Dailymotion recuperada desde metadata pública");
+          return resolved;
+        }
+      } catch (error) {
+        log("No se pudo recuperar metadata del video capturado", String(error && error.message || error).slice(0, 100));
+      }
+    }
+    // No validamos HLS con kino.fetch: esa petición puede recibir HTML/XML
     // distinto de lo que obtuvo el navegador integrado y descartar fuentes válidas.
     const stream = capturedStream(capture);
     if (stream) {
