@@ -1930,13 +1930,16 @@ async function resolveNativePlayerSources(html, pageUrl) {
       }
       if (!stream) return null;
       const ownR2 = /(^|\.)videos\.donghualife\.com$/i.test(new URL(stream.url).hostname);
-      let subtitles = parsed.subtitles.concat(
-        nativeSourceSubtitleHints(source),
-        await resolveNativeSourceSubtitleTokens(source, pageUrl, sourceHeaders)
-      );
+      // En proveedores ajenos a R2 dejamos las pistas directas que ya vinieron en
+      // la respuesta; no consultamos tokens de subtítulos porque suelen estar incrustados.
+      let subtitles = parsed.subtitles.slice();
       if (ownR2) {
-        subtitles = subtitles.concat(await readNativeHlsSubtitles(stream.url));
-        subtitles = subtitles.concat(await fetchNativeR2Subtitles(payload.episodeId, pageUrl, payload.sources));
+        subtitles = subtitles.concat(
+          nativeSourceSubtitleHints(source),
+          await resolveNativeSourceSubtitleTokens(source, pageUrl, sourceHeaders),
+          await readNativeHlsSubtitles(stream.url),
+          await fetchNativeR2Subtitles(payload.episodeId, pageUrl, payload.sources)
+        );
       }
       if (subtitles.length) stream.subtitles = subtitles
         .filter((item, index, all) => all.findIndex((x) => x.url === item.url) === index)
