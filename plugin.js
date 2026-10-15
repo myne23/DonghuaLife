@@ -1461,10 +1461,25 @@ function capturedStream(capture) {
     return type === "hls" ? "application/vnd.apple.mpegurl" : type === "webm" ? "video/webm" : "video/mp4";
   };
   const playbackHeaders = (item, host) => {
-    const headers = item && item.headers && typeof item.headers === "object" ? { ...item.headers } : {};
+    const captured = item && item.headers && typeof item.headers === "object" ? item.headers : {};
+    // Browser capture can associate an OPTIONS preflight with the media URL.
+    // Access-Control-Request-* describe that preflight and must never be replayed
+    // on the actual GET/Range requests sent by Kino's media player.
+    const headers = Object.fromEntries(Object.entries(captured).filter(([key, value]) =>
+      !/^access-control-request-/i.test(key) && typeof value === "string"
+    ));
+    const hasHeader = (name) => Object.keys(headers).some((key) => key.toLowerCase() === name);
     if (/(^|\.)dailymotion\.com$/i.test(host)) {
-      if (!Object.keys(headers).some((key) => key.toLowerCase() === "referer")) headers.Referer = "https://www.dailymotion.com/";
-      if (!Object.keys(headers).some((key) => key.toLowerCase() === "origin")) headers.Origin = "https://www.dailymotion.com";
+      if (!hasHeader("referer")) headers.Referer = "https://www.dailymotion.com/";
+      if (!hasHeader("origin")) headers.Origin = "https://www.dailymotion.com";
+    }
+    if (/(^|\.)odycdn\.com$/i.test(host) || /(^|\.)odysee\.com$/i.test(host)) {
+      if (!hasHeader("referer")) headers.Referer = "https://odysee.com/";
+      if (!hasHeader("origin")) headers.Origin = "https://odysee.com";
+    }
+    const removed = Object.keys(captured).filter((key) => /^access-control-request-/i.test(key)).length;
+    if (removed && /(^|\.)odycdn\.com$/i.test(host)) {
+      log("Se filtraron cabeceras de preflight para reproducción Odysee", "eliminadas=" + removed);
     }
     return headers;
   };
