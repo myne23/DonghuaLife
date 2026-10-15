@@ -1081,13 +1081,37 @@ function sourceLabel(value) {
   } catch { return "Fuente alternativa"; }
 }
 
+function diagnosePlayerHints(html) {
+  const source = String(html || "");
+  const scripts = source.match(/<script\b/gi) || [];
+  const hint = (pattern) => pattern.test(source);
+  return {
+    htmlChars: source.length,
+    scripts: scripts.length,
+    hasR2Host: hint(/videos\.donghualife\.com/i),
+    hasM3u8Text: hint(/m3u8|mpegurl/i),
+    hasR2Text: hint(/\br2\b|cloudflare.?r2/i),
+    hasPlayerText: hint(/player|playback|stream|source|videoUrl|video_url/i),
+    hasIframeText: hint(/iframe|data-options|data-player|embedUrl|embed_url/i),
+    hasNextData: hint(/__NEXT_DATA__|self\.__next_f|next\/static/i)
+  };
+}
+
 function extractSourceCandidates(html, pageUrl) {
   // El HTML de Next puede incluir los datos del reproductor como JSON con barras
   // escapadas. Normalizamos esas representaciones antes de extraer URLs públicas.
   const source = decodeHtml(String(html || ""))
     .replace(/\\u0026/gi, "&")
     .replace(/\\u003d/gi, "=")
-    .replace(/\\\//g, "/");
+    .replace(/\\u002f/gi, "/")
+    .replace(/\\u003a/gi, ":")
+    .replace(/\\u002e/gi, ".")
+    .replace(/\\x2f/gi, "/")
+    .replace(/\\x3a/gi, ":")
+    .replace(/\\x2e/gi, ".")
+    .replace(/\\\\\//g, "/")
+    .replace(/https?%3a%2f%2f/gi, (value) => value.toLowerCase().startsWith("https") ? "https://" : "http://")
+    .replace(/&sol;/gi, "/");
   const matches = source.match(/https?:\/\/[^\s"'<>\\]+/gi) || [];
   const candidates = [];
   const seen = new Set();
@@ -1517,6 +1541,9 @@ export async function resolve(ref) {
   // hidratado, resolvemos primero fuentes directas/metadatos y dejamos las demás como
   // alternativas diferidas de Kino. Así no dependemos del servidor seleccionado por defecto.
   const candidates = extractSourceCandidates(html, url);
+  if (!candidates.length) {
+    log("Diagnóstico HTML de reproductor para resolver fuente nativa", JSON.stringify(diagnosePlayerHints(html)));
+  }
   for (const candidate of candidates) {
     const stream = await resolveProviderUrl(candidate, url, false);
     if (stream) {
