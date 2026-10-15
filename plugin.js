@@ -1404,13 +1404,13 @@ async function resolveOdysee(providerUrl) {
     const original = supported[0];
     const originalUrl = new URL(original.url);
     const candidates = [];
+    candidates.push({ item: original, url: original.url, reason: "capturado" });
     if (/^\/api\/v[34]\/streams\/free\//i.test(originalUrl.pathname)) {
       const canonical = new URL(original.url);
       canonical.hostname = "player.odycdn.com";
-      candidates.push({ item: original, url: canonical.href, reason: "host-gratuito" });
-    }
-    if (!candidates.some((candidate) => candidate.url === original.url)) {
-      candidates.push({ item: original, url: original.url, reason: "capturado" });
+      if (canonical.href !== original.url) {
+        candidates.push({ item: original, url: canonical.href, reason: "host-gratuito" });
+      }
     }
     for (const item of supported.slice(1)) {
       if (!candidates.some((candidate) => candidate.url === item.url)) candidates.push({ item, url: item.url, reason: "alternativo-capturado" });
