@@ -15,7 +15,7 @@ globalThis.kino = {
   async fetch(input) {
     const url = String(input);
     if (url === seriesUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return seriesHtml;}};
-    const match = /\\/watch\\/vip-show-(\\d+)-(\\d+)$/.exec(new URL(url).pathname);
+    const match = /\/watch\/vip-show-(\d+)-(\d+)$/.exec(new URL(url).pathname);
     if (match) {
       const season = Number(match[1]), episode = Number(match[2]);
       const html = '<h1>VIP Show</h1><a href="/watch/vip-show-' + season + '-' + episode + '">Capítulo ' + episode + '</a>';
