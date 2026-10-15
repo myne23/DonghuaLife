@@ -997,14 +997,13 @@ function declaredSeasonCount(html) {
   return match ? Math.min(50, Number(match[1])) : 0;
 }
 
-function episodeRouteForSeason(episodeRef, season) {
+function episodeRouteForSeason(episodeRef, season, episode = 1) {
   const path = String(episodeRef || "");
   const modern = /^(.*\/watch\/.+?)-temporada-\d{1,3}-\d{1,4}\/?$/i.exec(path);
-  if (modern) return modern[1] + "-temporada-" + season + "-1";
-  const legacy = /^(.*\/watch\/.+?)-\d{1,3}-\d{1,4}\/?$/i.exec(path);
-  return legacy ? legacy[1] + "-" + season + "-1" : "";
+  if (modern) return modern[1] + "-temporada-" + season + "-" + episode;
+  const legacy = /^(.*\/watch\/.+?)-\d{1,3}-\d{1,4}\/?$/.exec(path);
+  return legacy ? legacy[1] + "-" + season + "-" + episode : "";
 }
-
 function seasonItems(list, season) {
   return list.filter((episode) => !episode.specialMovie && episode.season === season);
 }
@@ -1090,8 +1089,38 @@ export async function episodes(ref) {
         for (const [posterSeason, poster] of parseSeasonPosters(seasonHtml, seasonUrl)) {
           if (!seasonPosters.has(posterSeason)) seasonPosters.set(posterSeason, poster);
         }
-        const seasonList = seasonItems(parseEpisodes(seasonHtml, seasonUrl), number);
-        if (seasonList.length > existing.length) {
+        let seasonList = seasonItems(parseEpisodes(seasonHtml, seasonUrl), number);
+
+        // Algunas páginas muestran solo el capítulo actual (incluso uno VIP),
+        // no la lista entera. Recuperar los capítulos públicos desde sus rutas.
+        if (seasonList.length <= 1) {
+          const recovered = new Map(seasonList.map((episode) => [episode.number, episode]));
+          let foundAny = recovered.size > 0;
+          for (let episodeNumber = 1; episodeNumber <= 100; episodeNumber++) {
+            if (recovered.has(episodeNumber)) continue;
+            const episodeRoute = episodeRouteForSeason(firstEpisode.ref, number, episodeNumber);
+            if (!episodeRoute) break;
+            try {
+              const episodeUrl = absolute(episodeRoute, detailUrl);
+              const episodeHtml = episodeNumber === 1 ? seasonHtml : await getText(episodeUrl);
+              const episodeItems = seasonItems(parseEpisodes(episodeHtml, episodeUrl), number);
+              const exact = episodeItems.find((episode) => episode.number === episodeNumber);
+              if (exact) {
+                recovered.set(episodeNumber, exact);
+                foundAny = true;
+              } else if (foundAny || episodeNumber > 1) {
+                break;
+              }
+            } catch (error) {
+              if (foundAny || episodeNumber > 1) break;
+            }
+          }
+          if (recovered.size > seasonList.length) {
+            seasonList = Array.from(recovered.values()).sort((a, b) => a.number - b.number);
+          }
+        }
+
+        if (seasonList.length > existing.length || (existing.length <= 1 && seasonList.length > 0)) {
           list = list.filter((episode) => episode.specialMovie || episode.season !== number);
           list.push(...seasonList);
         }
