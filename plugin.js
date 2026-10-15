@@ -1650,7 +1650,11 @@ function parseNativeSourceBody(body, pageUrl) {
     if (!/^https:\/\//i.test(url) || !sourceHostAllowed(url)) return;
     if (subtitleHint || isSubtitleUrl(url)) {
       if (subtitleFormat(url)) subtitles.push({ url, lang: "es", format: subtitleFormat(url) });
-    } else if (isDirectMediaUrl(url) || /(^|\.)videos\.donghualife\.com$/i.test(new URL(url).hostname)) {
+    } else if (
+      isDirectMediaUrl(url) ||
+      /(^|\.)videos\.donghualife\.com$/i.test(new URL(url).hostname) ||
+      /(?:dailymotion\.com|dai\.ly|rumble\.com|odysee\.com|voe\.sx|voe\.to|ok\.ru|doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co)\//i.test(url)
+    ) {
       urls.push(url);
     }
   };
@@ -1857,8 +1861,9 @@ async function resolveNativePlayerSources(html, pageUrl) {
       }
       const body = response.text().trim();
       const parsed = parseNativeSourceBody(body, pageUrl);
-      const direct = parsed.urls.find((candidate) => isDirectMediaUrl(candidate) ||
-        /(^|\.)videos\.donghualife\.com$/i.test(new URL(candidate).hostname));
+      const direct = parsed.urls.find((candidate) => isDirectMediaUrl(candidate)) ||
+        parsed.urls.find((candidate) => /(^|\.)videos\.donghualife\.com$/i.test(new URL(candidate).hostname)) ||
+        parsed.urls[0];
       if (!direct) return null;
       let stream = directStream(direct);
       if (!stream && /(^|\.)videos\.donghualife\.com$/i.test(new URL(direct).hostname)) {
