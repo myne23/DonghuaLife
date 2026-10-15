@@ -1369,7 +1369,7 @@ async function resolveDailymotion(url, referer) {
 async function resolveOdyseeDirectMedia(mediaUrl, stream) {
   let original;
   try { original = new URL(mediaUrl); } catch { return stream; }
-  if (!/(^|\\.)odycdn\\.com$/i.test(original.hostname)) return stream;
+  if (!/(^|\.)odycdn\.com$/i.test(original.hostname)) return stream;
 
   const headers = {
     ...(stream && stream.headers || {}),
@@ -1379,13 +1379,13 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
     Origin: "https://odysee.com"
   };
   let playbackUrl = original.href;
-  let finalType = /\\.m3u8(?:[?#]|$)/i.test(original.href) ? "hls" :
-    /\\.webm(?:[?#]|$)/i.test(original.pathname) ? "webm" : "mp4";
+  let finalType = /\.m3u8(?:[?#]|$)/i.test(original.href) ? "hls" :
+    /\.webm(?:[?#]|$)/i.test(original.pathname) ? "webm" : "mp4";
 
   // La URL capturada del CDN ya suele contener claim_id y el prefijo del sd_hash.
   // Consultamos resolve (anónimo, sin auth) solo para validar/recuperar metadatos;
   // nunca llamamos get, que es el endpoint que puede activar el rate limit.
-  const pathMatch = /^\\/api\\/v[34]\\/streams\\/free\\/([^/]+)\\/([a-f0-9]{40})(?:\\/([^/]+))?/i.exec(original.pathname);
+  const pathMatch = /^\/api\/v[34]\/streams\/free\/([^/]+)\/([a-f0-9]{40})(?:\/([^/]+))?/i.exec(original.pathname);
   if (pathMatch) {
     let name = pathMatch[1];
     try { name = decodeURIComponent(name); } catch {}
@@ -1443,7 +1443,7 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
       const safeName = encodeURIComponent(rawName);
       const sourceName = String(source.name || "");
       let ext = "";
-      if (/\\.[a-z0-9]{2,8}$/i.test(sourceName)) ext = sourceName.split(".").pop().toLowerCase();
+      if (/\.[a-z0-9]{2,8}$/i.test(sourceName)) ext = sourceName.split(".").pop().toLowerCase();
       if (!ext) {
         const mediaType = String(source.media_type || "").toLowerCase();
         ext = mediaType.includes("webm") ? "webm" : mediaType.includes("mpegurl") ? "m3u8" :
@@ -1452,7 +1452,7 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
       // Preferir el prefijo que ya publica el CDN en la URL original (puede ser
       // más corto que 8 caracteres); si no está, usar un prefijo del sd_hash.
       const filename = pathMatch[3] || "";
-      const existingSuffix = /^([a-f0-9]{4,64})\\.[a-z0-9]{2,8}$/i.exec(filename);
+      const existingSuffix = /^([a-f0-9]{4,64})\.[a-z0-9]{2,8}$/i.exec(filename);
       const prefix = existingSuffix ? existingSuffix[1] : String(source.sd_hash).slice(0, 8);
       const directUrl = "https://player.odycdn.com/api/v3/streams/free/" +
         safeName + "/" + claimId + "/" + prefix + "." + ext;
