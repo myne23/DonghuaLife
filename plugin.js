@@ -1369,40 +1369,46 @@ async function resolveDailymotion(url, referer) {
 async function resolveOdyseeDirectMedia(mediaUrl, stream) {
   let original;
   try { original = new URL(mediaUrl); } catch { return stream; }
-  if (!/^(?:player|secure)\.odycdn\.com$/i.test(original.hostname)) return stream;
+  if (!/(^|\\.)odycdn\\.com$/i.test(original.hostname)) return stream;
 
-  const candidates = [{ url: original.href, reason: "API-directo" }];
-  if (/^\/api\/v[34]\/streams\/free\//i.test(original.pathname)) {
-    const publicHost = new URL(original.href);
-    publicHost.hostname = "player.odycdn.com";
-    if (publicHost.href !== original.href) candidates.push({ url: publicHost.href, reason: "API-host-gratuito" });
-  }
   const headers = { Accept: "*/*", Referer: "https://odysee.com/", Origin: "https://odysee.com" };
+  const candidates = [{ url: original.href, reason: "capturado", type: /\\.m3u8(?:[?#]|$)/i.test(original.pathname) ? "hls" : "mp4" }];
+
+  // El endpoint /api/v3/streams/free suele exponer claim y sd_hash en el path.
+  // Probamos la ruta pública /v6 que usa el resolvedor nativo para videos públicos.
+  const legacy = /^\\/api\\/v[34]\\/streams\\/free\\/([^/]+)\\/([^/]+)\\/[^/]+$/i.exec(original.pathname);
+  if (legacy) {
+    const claimId = legacy[1], sdHash = legacy[2];
+    candidates.unshift(
+      { url: "https://player.odycdn.com/v6/streams/" + encodeURIComponent(claimId) + "/" + encodeURIComponent(sdHash) + ".mp4", reason: "v6-mp4", type: "mp4" },
+      { url: "https://player.odycdn.com/v6/streams/" + encodeURIComponent(claimId) + "/" + encodeURIComponent(sdHash) + "/master.m3u8", reason: "v6-hls", type: "hls" }
+    );
+  }
+
   let lastStatus = 0;
   for (const candidate of candidates) {
     try {
-      const response = await kino.fetch(candidate.url, {
-        method: "GET",
-        headers: { ...headers, Range: "bytes=0-0" },
-        timeoutMs: 4500
-      });
+      const requestHeaders = { ...headers };
+      if (candidate.type !== "hls") requestHeaders.Range = "bytes=0-0";
+      const response = await kino.fetch(candidate.url, { method: "GET", headers: requestHeaders, timeoutMs: 5000 });
       lastStatus = response.status;
-      log("Prueba de URL Odysee API", candidate.reason, new URL(candidate.url).hostname, "HTTP", response.status);
+      log("Prueba de URL Odysee", candidate.reason, new URL(candidate.url).hostname, "HTTP", response.status);
       if (response.ok || response.status === 206) {
         return {
           ...stream,
-          url: response.url && /^https:\/\//i.test(response.url) ? response.url : candidate.url,
+          url: candidate.url,
+          mime: candidate.type === "hls" ? "application/vnd.apple.mpegurl" : "video/mp4",
+          label: candidate.type === "hls" ? "Odysee · HLS" : "Odysee · MP4",
           headers
         };
       }
     } catch (error) {
-      log("No se pudo comprobar URL Odysee API", candidate.reason, String(error && error.message || error).slice(0, 90));
+      log("No se pudo comprobar URL Odysee", candidate.reason, String(error && error.message || error).slice(0, 90));
     }
   }
-  log("Odysee API: ninguna URL superó la comprobación previa; se conserva la URL original", "último_http=" + lastStatus);
+  log("Odysee: ninguna variante superó la comprobación previa; se conserva la fuente capturada", "último_http=" + lastStatus);
   return { ...stream, headers };
 }
-
 async function resolveOdysee(providerUrl) {
   let parsed;
   try { parsed = new URL(providerUrl); } catch { return null; }
