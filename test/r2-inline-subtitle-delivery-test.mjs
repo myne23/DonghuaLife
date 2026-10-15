@@ -27,7 +27,7 @@ globalThis.kino = {
     if (url === "https://donghualife.com/api/subtitles/" + subtitleId) {
       return {ok:true,status:200,headers:{"content-type":"application/json"},text(){return JSON.stringify({success:true,label:"Español",language:"es",content:ass});},json(){return {success:true,label:"Español",language:"es",content:ass};}};
     }
-    throw new Error("No debe hacer sondeos especulativos de URL de subtítulos: " + url);    throw new Error("URL inesperada en prueba de entrega directa: " + url);
+    throw new Error("No debe hacer sondeos especulativos de URL de subtítulos: " + url);
   }
 };
 
