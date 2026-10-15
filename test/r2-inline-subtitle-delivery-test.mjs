@@ -4,7 +4,7 @@ const logs = [];
 const watchUrl = "https://donghualife.com/watch/el-inmortal-renegado-1-161";
 const masterUrl = "https://videos.donghualife.com/episodes/test/master.m3u8";
 const subtitleId = "12345678-1234-1234-1234-123456789abc";
-const ass = "[Script Info]\\nScriptType: v4.00+\\n[V4+ Styles]\\n[Events]\\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\\nDialogue: 0,0:00:01.20,0:00:03.40,Default,,0,0,0,,Hola mundo";
+const ass = "[Script Info]\nScriptType: v4.00+\n[V4+ Styles]\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.20,0:00:03.40,Default,,0,0,0,,Hola mundo";
 const html = '<html><script id="__NEXT_DATA__" type="application/json">' +
   JSON.stringify({props:{pageProps:{episodeId:"episode-161",playerConfig:{sources:[
     {label:"R2 principal",token:"token-r2-test",provider:"r2",priority:1,isWorking:true}
@@ -20,7 +20,7 @@ globalThis.kino = {
       assert.equal(options.method, "POST");
       return {ok:true,status:200,headers:{"content-type":"application/json"},text(){return JSON.stringify({url:masterUrl});},json(){return {url:masterUrl};}};
     }
-    if (url === masterUrl) return {ok:true,status:200,headers:{"content-type":"application/vnd.apple.mpegurl"},text(){return "#EXTM3U\\n#EXT-X-TARGETDURATION:6\\n#EXT-X-MEDIA-SEQUENCE:1\\n";}};
+    if (url === masterUrl) return {ok:true,status:200,headers:{"content-type":"application/vnd.apple.mpegurl"},text(){return "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:1\n";}};
     if (url === "https://donghualife.com/api/subtitles?episodeId=episode-161") {
       return {ok:true,status:200,headers:{"content-type":"application/json"},text(){return JSON.stringify({subtitles:[{id:subtitleId,language:"es"}]});},json(){return {subtitles:[{id:subtitleId,language:"es"}]};}};
     }
@@ -31,7 +31,7 @@ globalThis.kino = {
       return {ok:false,status:404,headers:{"content-type":"application/json"},text(){return '{"error":"not found"}';}};
     }
     if (url === "https://donghualife.com/api/subtitles/" + subtitleId + "?format=vtt") {
-      return {ok:true,status:200,headers:{"content-type":"text/vtt"},text(){return "WEBVTT\\n\\n00:00:01.200 --> 00:00:03.400\\nHola mundo";}};
+      return {ok:true,status:200,headers:{"content-type":"text/vtt"},text(){return "WEBVTT\n\n00:00:01.200 --> 00:00:03.400\nHola mundo";}};
     }
     if (url === "https://donghualife.com/api/subtitles/" + subtitleId + "?raw=1" ||
         url === "https://donghualife.com/api/subtitles/" + subtitleId + ".srt") {
