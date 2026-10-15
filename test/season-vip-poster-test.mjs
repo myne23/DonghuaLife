@@ -7,7 +7,12 @@ const seriesHtml = '<html><head><meta property="og:image" content="/images/serie
   '<a href="/watch/vip-show-1-1">Capítulo 1</a>' +
   '<a href="/watch/vip-show-1-2">Capítulo 2</a>' +
   '<a href="/watch/vip-show-1-3">Capítulo 3</a>' +
-  '<a href="/watch/vip-show-1-4"><span>Capítulo 4VIP</span></a></html>';
+  '<a href="/watch/vip-show-1-4"><span>Capítulo 4VIP</span></a>' +
+  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-1">Capítulo 1</a>' +
+  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-2">Capítulo 2</a>' +
+  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-3">Capítulo 3</a>' +
+  '<div class="episode-card"><span class="badge vip">VIP</span>' +
+  '<a href="/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-4">Capítulo 4</a></div></html>';
 
 globalThis.kino = {
   log() {},
@@ -27,7 +32,8 @@ globalThis.kino = {
 
 const plugin = await import("../plugin.js?season-vip-poster-test=1");
 const first = await plugin.episodes("vip-show");
-assert.deepEqual(first.episodes.map(episode => episode.number), [1,2,3], "El capítulo VIP no debe listarse como reproducible");
+assert.deepEqual(first.episodes.filter(episode => episode.season === 1).map(episode => episode.number), [1,2,3], "El capítulo VIP de la temporada 1 no debe listarse");
+assert.deepEqual(first.episodes.filter(episode => episode.season === 3).map(episode => episode.number), [1,2,3], "La temporada 3 debe mostrar solo los capítulos 1–3 y excluir el capítulo 4 VIP");
 assert.equal(first.seasons.length, 4, "Debe conservar las cuatro temporadas");
 assert.equal(first.series.poster, "https://donghualife.com/images/season-1.jpg", "La ficha debe usar la portada de la temporada actual");
 const fourth = await plugin.episodes(first.seasons[3].ref);
