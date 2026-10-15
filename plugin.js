@@ -2283,14 +2283,13 @@ async function resolveNativePlayerSources(html, pageUrl) {
       return null;
     }
   }));
-  // Priorizar Odysee como prueba principal: su URL capturada debe probarse
-  // desde Kino, sin que un preflight externo 401/429 descarte la fuente.
-  const isOdysee = (item) => /odysee/i.test(String(item.source.label || item.source.provider || ""));
+  // Respetar la prioridad publicada por el reproductor: en esta serie Rumble
+  // suele funcionar directamente, mientras que Odysee puede devolver 401 desde Kino.
+  // Odysee queda disponible como alternativa manual, sin retrasar el inicio de cada capítulo.
   const isR2 = (item) =>
     /^r2$/i.test(String(item.source.label || item.source.provider || "").trim()) ||
     /(^|\.)videos\.donghualife\.com$/i.test(String(item.stream.url || ""));
   const usable = results.filter(Boolean).sort((a, b) =>
-    Number(isOdysee(b)) - Number(isOdysee(a)) ||
     Number(b.source.isWorking) - Number(a.source.isWorking) ||
     Number(isR2(a)) - Number(isR2(b)) ||
     a.source.priority - b.source.priority
