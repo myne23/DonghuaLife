@@ -1124,7 +1124,7 @@ function extractSourceCandidates(html, pageUrl) {
     .replace(/\\x2f/gi, "/")
     .replace(/\\x3a/gi, ":")
     .replace(/\\x2e/gi, ".")
-    .replace(/\\\\\//g, "/")
+    .replace(/\\\//g, "/")
     .replace(/https?%3a%2f%2f/gi, (value) => value.toLowerCase().startsWith("https") ? "https://" : "http://")
     .replace(/&sol;/gi, "/");
   const matches = source.match(/https?:\/\/[^\s"'<>\\]+/gi) || [];
