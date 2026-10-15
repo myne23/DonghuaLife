@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 const seriesUrl = "https://donghualife.com/series/vip-show";
 const seriesHtml = '<html><head><meta property="og:image" content="/images/series.jpg"></head>' +
   '<h1>VIP Show</h1><p>4 Temporadas</p>' +
-  [1,2,3,4].map(n => '<a href="/series/vip-show"><img alt="Temporada ' + n + '" src="/images/season-' + n + '.jpg"></a>').join("") +
+  [1,2,3,4].map(n => '<a href="/series/vip-show"><div class="season-card"><img alt="Portada ' + n + '" src="/images/season-' + n + '.jpg"><span>Temporada ' + n + '</span></div></a>').join("") +
   '<a href="/watch/vip-show-1-1">Capítulo 1</a>' +
   '<a href="/watch/vip-show-1-2">Capítulo 2</a>' +
   '<a href="/watch/vip-show-1-3">Capítulo 3</a>' +
-  '<a href="/watch/vip-show-1-4"><span>Capítulo 4</span><span class="badge">VIP</span></a></html>';
+  '<a href="/watch/vip-show-1-4"><span>Capítulo 4VIP</span></a></html>';
 
 globalThis.kino = {
   log() {},
