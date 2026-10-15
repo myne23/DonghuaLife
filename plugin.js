@@ -311,20 +311,24 @@ function parseEpisodes(html, pageUrl) {
     // En la web el distintivo puede quedar pegado al número ("Episodio 4VIP"),
     // por eso no usamos límites de palabra. También detectamos el badge hermano
     // que aparece justo después del enlace y antes de la siguiente tarjeta.
-    const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 700));
+    // Inspeccionar solo el resto de la tarjeta actual. Cortar en el primer
+    // cierre de contenedor evita que el badge VIP del capítulo siguiente
+    // contamine los capítulos 1–3.
+    const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 900));
+    const cardClose = /<\/(?:div|li|article|section)\s*>/i.exec(tail);
     const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
-    const afterLink = nextEpisodeLink ? tail.slice(0, nextEpisodeLink.index) : tail.slice(0, 260);
-    // El distintivo VIP también puede estar antes del enlace, dentro de la tarjeta,
-    // o indicado solo por una clase/atributo (sin texto visible).
-    const afterLinkVipAt = afterLink.search(/VIP/i);
-    const beforeNextCard = afterLinkVipAt >= 0 && /<(?:div|li|article|section)\b[^>]*(?:episode|chapter|card|item|grid)/i.test(afterLink.slice(0, afterLinkVipAt));
-    const afterLinkVip = beforeNextCard ? "" : afterLink;
+    const cutAt = Math.min(
+      cardClose ? cardClose.index : tail.length,
+      nextEpisodeLink ? nextEpisodeLink.index : tail.length
+    );
+    const afterLink = tail.slice(0, cutAt);
+    // Solo el enlace actual y su propia tarjeta determinan si un episodio es VIP.
     const vipContext = [
       linkLabel, imageLabelForVip,
       attr(match[0], "class"), attr(match[0], "id"),
       attr(match[0], "aria-label"), attr(match[0], "title"),
       attr(match[0], "data-label"), attr(match[0], "data-title"),
-      afterLinkVip
+      afterLink
     ].join(" ");
     // En el prefijo solo aceptamos marcadores VIP estructurales o una insignia
     // cuyo texto sea exactamente «VIP»; no el nombre de la serie (p. ej. «VIP Show»).
