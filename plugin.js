@@ -1839,6 +1839,13 @@ async function resolveProviderUrl(providerUrl, referer, allowCapture) {
     const odysee = await resolveOdysee(providerUrl);
     if (odysee) return odysee;
   }
+  // Al resolver el conjunto inicial de fuentes no visitar la página Odysee:
+  // su HTML puede tardar 10-20 s y Rumble ya proporciona el stream principal.
+  // El embed queda para resolución diferida si el usuario elige esa alternativa.
+  if (!allowCapture && /^https:\/\/(?:www\.)?odysee\.com\//i.test(providerUrl)) {
+    log("Odysee: se omite lectura de metadatos durante la resolución inicial");
+    return null;
+  }
   const direct = directStream(providerUrl);
   if (direct) return direct;
   if (/ok\.ru\/(?:video|videoembed)/i.test(providerUrl)) {
