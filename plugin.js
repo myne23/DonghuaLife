@@ -1197,10 +1197,13 @@ export async function episodes(ref) {
   const listedMaxSeason = list.reduce((max, episode) =>
     episode.specialMovie ? max : Math.max(max, episode.season), 0);
   let linkedMaxSeason = 0;
-  const seasonRouteRe = /\/watch\/[^"'<>\s]*?-temporada-(\d{1,3})-\d{1,4}/gi;
+  const seasonRouteRe = /\/watch\/[^"'<>\s]*?(?:-temporada-|-)(\d{1,3})-\d{1,4}/gi;
   let linkedSeasonMatch;
-  while ((linkedSeasonMatch = seasonRouteRe.exec(String(html || ""))) && linkedMaxSeason < 50) {
-    linkedMaxSeason = Math.max(linkedMaxSeason, Number(linkedSeasonMatch[1]));
+  while ((linkedSeasonMatch = seasonRouteRe.exec(String(html || "")))) {
+    const candidateSeason = Number(linkedSeasonMatch[1]);
+    if (candidateSeason >= 1 && candidateSeason <= 50) {
+      linkedMaxSeason = Math.max(linkedMaxSeason, candidateSeason);
+    }
   }
   const seasonCount = Math.max(declaredSeasons, listedMaxSeason, linkedMaxSeason);
   if (seasonCount > 1 && firstEpisode) {
