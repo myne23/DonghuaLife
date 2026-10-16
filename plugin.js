@@ -15,7 +15,7 @@ function log(...args) {
 
 const responseCache = new Map();
 const pendingRequests = new Map();
-const RESPONSE_CACHE_TTL = 20000;
+const RESPONSE_CACHE_TTL = 120000;
 const RESPONSE_CACHE_LIMIT = 100;
 
 async function getText(url, options) {
@@ -1228,24 +1228,49 @@ export async function episodes(ref) {
         // no la lista entera. Recuperar los capítulos públicos desde sus rutas.
         if (seasonList.length <= 1) {
           const recovered = new Map(seasonList.map((episode) => [episode.number, episode]));
-          let foundAny = recovered.size > 0;
-          for (let episodeNumber = 1; episodeNumber <= 100; episodeNumber++) {
-            if (recovered.has(episodeNumber)) continue;
+          const anchorNumber = Math.max(1, Number(seasonAnchor.number) || 1);
+          // No asumir que el primer enlace de la ficha es el capítulo 1.
+          // En algunas series la ficha solo expone el episodio actual (p. ej. 10).
+          // Exploramos desde ese episodio hacia atrás y luego hacia delante; así un
+          // hueco inicial no cancela la recuperación de los capítulos restantes.
+          const probes = [
+            anchorNumber,
+            ...Array.from({ length: anchorNumber - 1 }, (_, i) => anchorNumber - i - 1),
+            ...Array.from({ length: Math.max(0, 100 - anchorNumber) }, (_, i) => anchorNumber + i + 1)
+          ].filter((n) => n >= 1 && n <= 100);
+          let misses = 0;
+          let passedAnchor = false;
+          for (const episodeNumber of probes) {
+            if (recovered.has(episodeNumber)) {
+              if (episodeNumber >= anchorNumber) passedAnchor = true;
+              misses = 0;
+              continue;
+            }
             const episodeRoute = episodeRouteForSeason(seasonAnchor.ref, number, episodeNumber);
-            if (!episodeRoute) break;
+            if (!episodeRoute) continue;
             try {
               const episodeUrl = absolute(episodeRoute, detailUrl);
-              const episodeHtml = episodeNumber === 1 ? seasonHtml : await getText(episodeUrl);
+              const episodeHtml = episodeNumber === anchorNumber ? seasonHtml : await getText(episodeUrl);
               const episodeItems = seasonItems(parseEpisodes(episodeHtml, episodeUrl), number);
               const exact = episodeItems.find((episode) => episode.number === episodeNumber);
               if (exact) {
                 recovered.set(episodeNumber, exact);
-                foundAny = true;
-              } else if (foundAny || episodeNumber > 1) {
-                break;
+                misses = 0;
+                if (episodeNumber >= anchorNumber) passedAnchor = true;
+              } else {
+                misses++;
               }
             } catch (error) {
-              if (foundAny || episodeNumber > 1) break;
+              misses++;
+            }
+            // Antes del episodio ancla permitimos huecos; después, la numeración suele
+            // ser consecutiva, así que cortamos tras varios fallos para no hacer 100
+            // solicitudes a una serie corta.
+            if (passedAnchor && episodeNumber > anchorNumber && misses >= 5) break;
+            if (!passedAnchor && episodeNumber < anchorNumber && misses >= 5) {
+              // No descartamos la búsqueda hacia delante: reiniciamos el contador.
+              misses = 0;
+              passedAnchor = true;
             }
           }
           if (recovered.size > seasonList.length) {
