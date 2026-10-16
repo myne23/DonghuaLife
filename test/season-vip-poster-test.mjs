@@ -155,7 +155,9 @@ assert.ok(!lateStart.episodes.some(episode => episode.number === 10), "El capít
 
  // Regresión realista: el texto del enlace puede incluir «Capítulo 10 VIP Episodio 10».
 const vipAnchorHtml = '<html><h1>Supreme God Emperor</h1><p>1 temporada</p>' +
-  '<a href="/watch/supreme-god-emperor-temporada-2-10">Capítulo 10 VIP Episodio 10</a>' +
+  // La misma ruta aparece primero en «Ver último» sin la marca VIP.
+  '<a href="/watch/supreme-god-emperor-2-10">Ver último</a>' +
+  '<a href="/watch/supreme-god-emperor-2-10">Capítulo 10 VIP Episodio 10</a>' +
   '<a href="/watch/supreme-god-emperor-temporada-2-106">Capítulo 106 episodio 106</a>' +
   '<a href="/watch/supreme-god-emperor-temporada-2-107">Capítulo 107 episodio 107</a></html>';
 const vipAnchorUrl = "https://donghualife.com/series/supreme-god-emperor";
@@ -174,5 +176,28 @@ assert.ok(!vipAnchorResult.episodes.some(episode => episode.number === 10),
 assert.equal(vipAnchorResult.episodes[0].number, 106,
   "La temporada reconstruida debe comenzar por el primer episodio público 106");
 
+
+
+// Regresión: el enlace destacado «Ver último» puede repetir una ruta VIP antes
+// de que aparezca la tarjeta marcada. La etiqueta VIP posterior debe invalidarla.
+const againstUrl = "https://donghualife.com/series/against-sky-supreme";
+const againstHtml = '<html><h1>Against The Sky Supreme</h1><p>1 temporada</p>' +
+  '<a href="/watch/against-sky-supreme-1-557">Ver último</a>' +
+  Array.from({length:556}, (_, i) => '<a href="/watch/against-sky-supreme-1-' + (i + 1) + '">Capítulo ' + (i + 1) + '</a>').join('') +
+  '<a href="/watch/against-sky-supreme-1-557">Capítulo 557 VIP Capítulo 557</a></html>';
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === againstUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return againstHtml;}};
+  if (url.includes("/watch/against-sky-supreme-1-")) {
+    return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return againstHtml;}};
+  }
+  throw new Error("URL inesperada en prueba VIP duplicado: " + url);
+};
+const againstPlugin = await import("../plugin.js?against-vip-duplicate-test=1");
+const against = await againstPlugin.episodes("against-sky-supreme");
+assert.equal(against.episodes.length, 556, "Against the Sky Supreme debe conservar solo los 556 episodios públicos");
+assert.equal(against.episodes[0].number, 1);
+assert.equal(against.episodes.at(-1).number, 556);
+assert.ok(!against.episodes.some(episode => episode.number === 557), "El 557 VIP debe excluirse aunque Ver último lo enlace antes");
 
 console.log("Temporadas: filtro VIP, bloques de episodios, temporadas con metadatos desactualizados y fichas con un único enlace.");
