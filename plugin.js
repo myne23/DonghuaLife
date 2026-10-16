@@ -1095,6 +1095,30 @@ function seasonItems(list, season) {
   return list.filter((episode) => !episode.specialMovie && episode.season === season);
 }
 
+// Recupera una ruta por temporada incluso cuando el único enlace visible de esa
+// temporada es VIP y parseEpisodes lo excluye de la lista reproducible.
+function findSeasonAnchor(html, pageUrl, wantedSeason) {
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = re.exec(String(html || "")))) {
+    const url = absolute(match[2], pageUrl);
+    let path = "";
+    try { path = new URL(url).pathname; } catch { continue; }
+    const modern = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
+    const legacy = !modern && /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
+    const route = modern || legacy;
+    if (!route || Number(route[1]) !== wantedSeason) continue;
+    return {
+      season: Number(route[1]),
+      number: Number(route[2]),
+      ref: path,
+      title: "Capítulo " + Number(route[2]),
+      specialMovie: false
+    };
+  }
+  return null;
+}
+
 export async function episodes(ref) {
   const specialPrefix = "special-peli:";
   const seasonPrefix = "season:";
@@ -1172,7 +1196,13 @@ export async function episodes(ref) {
   // episodios también es evidencia de temporadas nuevas (p. ej. declara 2, enlaza T3).
   const listedMaxSeason = list.reduce((max, episode) =>
     episode.specialMovie ? max : Math.max(max, episode.season), 0);
-  const seasonCount = Math.max(declaredSeasons, listedMaxSeason);
+  let linkedMaxSeason = 0;
+  const seasonRouteRe = /\/watch\/[^"'<>\s]*?-temporada-(\d{1,3})-\d{1,4}/gi;
+  let linkedSeasonMatch;
+  while ((linkedSeasonMatch = seasonRouteRe.exec(String(html || ""))) && linkedMaxSeason < 50) {
+    linkedMaxSeason = Math.max(linkedMaxSeason, Number(linkedSeasonMatch[1]));
+  }
+  const seasonCount = Math.max(declaredSeasons, listedMaxSeason, linkedMaxSeason);
   if (seasonCount > 1 && firstEpisode) {
     for (let number = 1; number <= seasonCount; number++) {
       const existing = seasonItems(list, number);
@@ -1180,7 +1210,7 @@ export async function episodes(ref) {
       if (existing.length > 1) continue;
       // Usar una referencia de la propia temporada si existe: las temporadas pueden
       // cambiar de slug/ID y no compartir la base de URL de la primera temporada.
-      const seasonAnchor = existing[0] || firstEpisode;
+      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) || firstEpisode;
       const route = episodeRouteForSeason(seasonAnchor.ref, number);
       if (!route) continue;
       try {
