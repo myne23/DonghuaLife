@@ -300,9 +300,22 @@ function parseEpisodes(html, pageUrl) {
     // No usamos una ventana fija que pueda alcanzar el badge de la tarjeta anterior.
     const precedingMarkup = html.slice(previousWatchEnd, match.index);
     const cardStarts = Array.from(precedingMarkup.matchAll(/<(?:div|li|article|section)\b[^>]*(?:class|id)\s*=\s*(["\'][^"\']*(?:episode|chapter|capitulo|card|item|video)[^"\']*["\'])[^>]*>/gi));
-    const currentCardMarkup = cardStarts.length
-      ? precedingMarkup.slice(cardStarts[cardStarts.length - 1].index)
-      : "";
+    let currentCardMarkup = "";
+    if (cardStarts.length) {
+      currentCardMarkup = precedingMarkup.slice(cardStarts[cardStarts.length - 1].index);
+    } else {
+      // Si la web usa clases genéricas, localizar el fragmento después del último
+      // cierre de tarjeta y limitarlo al último contenedor abierto antes del enlace.
+      const closeTags = /<\/(?:div|li|article|section)\s*>/gi;
+      let closeTag;
+      let boundary = 0;
+      while ((closeTag = closeTags.exec(precedingMarkup))) boundary = closeTags.lastIndex;
+      const localMarkup = precedingMarkup.slice(boundary);
+      const genericStarts = Array.from(localMarkup.matchAll(/<(?:div|li|article|section)\b[^>]*>/gi));
+      currentCardMarkup = genericStarts.length
+        ? localMarkup.slice(genericStarts[genericStarts.length - 1].index)
+        : localMarkup;
+    }
     const url = absolute(match[2], pageUrl);
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
