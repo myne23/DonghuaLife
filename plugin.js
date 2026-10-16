@@ -23,10 +23,11 @@ async function getText(url, options) {
   const referer = String(options && options.headers && options.headers.Referer || "");
   const cacheKey = originalUrl + "|" + referer;
   const now = Date.now();
+  const bypassCache = Boolean(options && options.noCache);
   const cached = responseCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.text;
-  if (cached) responseCache.delete(cacheKey);
-  if (pendingRequests.has(cacheKey)) return pendingRequests.get(cacheKey);
+  if (!bypassCache && cached && cached.expiresAt > now) return cached.text;
+  if (cached && (bypassCache || cached.expiresAt <= now)) responseCache.delete(cacheKey);
+  if (!bypassCache && pendingRequests.has(cacheKey)) return pendingRequests.get(cacheKey);
 
   const request = (async () => {
     let lastError;
@@ -39,6 +40,7 @@ async function getText(url, options) {
     const fast = Boolean(options && options.fast);
     const requestOptions = { ...(options || {}) };
     delete requestOptions.fast;
+    delete requestOptions.noCache;
     const headers = {
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
@@ -59,7 +61,9 @@ async function getText(url, options) {
         }
         if (response.ok) {
           const text = await response.text();
-          responseCache.set(cacheKey, { text, expiresAt: Date.now() + RESPONSE_CACHE_TTL });
+          // Una relectura explícita debe saltarse tanto la caché como su actualización,
+          // para no perpetuar una respuesta HTML incompleta del reproductor.
+          if (!bypassCache) responseCache.set(cacheKey, { text, expiresAt: Date.now() + RESPONSE_CACHE_TTL });
           while (responseCache.size > RESPONSE_CACHE_LIMIT) {
             responseCache.delete(responseCache.keys().next().value);
           }
@@ -2589,8 +2593,33 @@ async function resolveInner(ref) {
 
   // Primero usamos la API oficial del reproductor: Next.js -> token -> /api/player/source.
   // Esto evita depender de que browser.capture vea el manifiesto HLS.
-  const native = await resolveNativePlayerSources(html, url);
+  let native = await resolveNativePlayerSources(html, url);
   if (native) return native;
+
+  // Los capítulos recién publicados (incluidos los que acaban de salir de VIP y pasan
+  // a Últimos episodios) a veces entregan HTML sin el payload Next.js de fuentes. Antes
+  // de abrir un navegador/capturar red, releemos la misma página una sola vez sin caché
+  // y volvemos a ejecutar el resolver directo. Esto no depende de browser.capture.
+  log("El resolver nativo no obtuvo fuentes reproducibles; reintentando la página sin caché");
+  try {
+    const retryHtml = await getText(url, { fast: true, noCache: true, headers: { Referer: BASE + "/" } });
+    if (retryHtml && retryHtml.length) {
+      html = retryHtml;
+      log("Reintento directo de página completado", JSON.stringify({
+        htmlChars: html.length,
+        hasNextData: /__NEXT_DATA__|self\\.__next_f|buildId/i.test(html),
+        hasPlayerText: /player|fuentes|source/i.test(html)
+      }));
+      if (/solo\\s+para\\s+vip|requiere\\s+(?:una\\s+)?suscripci[oó]n|inicia\\s+sesi[oó]n\\s+para\\s+ver/i.test(textOf(html))) {
+        throw kino.error("unavailable", "Este episodio requiere acceso en el sitio");
+      }
+      const retryNative = await resolveNativePlayerSources(html, url);
+      if (retryNative) return retryNative;
+    }
+  } catch (error) {
+    if (error && error.code === "unavailable") throw error;
+    log("Falló el reintento directo del reproductor", String(error && error.message || error).slice(0, 100));
+  }
 
   // Resolvers propios: inspeccionamos las URLs de proveedores incluidas en el HTML
   // hidratado, resolvemos primero fuentes directas/metadatos y dejamos las demás como
