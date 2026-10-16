@@ -1250,7 +1250,7 @@ export async function episodes(ref) {
             if (!episodeRoute) continue;
             try {
               const episodeUrl = absolute(episodeRoute, detailUrl);
-              const episodeHtml = episodeNumber === anchorNumber ? seasonHtml : await getText(episodeUrl);
+              const episodeHtml = episodeNumber === anchorNumber && Number(seasonAnchor.season) === number ? seasonHtml : await getText(episodeUrl);
               const episodeItems = seasonItems(parseEpisodes(episodeHtml, episodeUrl), number);
               const exact = episodeItems.find((episode) => episode.number === episodeNumber);
               if (exact) {
