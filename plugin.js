@@ -1163,7 +1163,7 @@ function findSeasonAnchor(html, pageUrl, wantedSeason) {
       specialMovie: false
     };
     if (isVipPath) {
-      if (!vipFallback) vipFallback = candidate;
+      if (!vipFallback) vipFallback = { ...candidate, vipFallback: true };
       continue;
     }
     return candidate;
@@ -1280,7 +1280,10 @@ export async function episodes(ref) {
         (canReuseLegacyAnchor ? firstEpisode : null);
       // No inventar temporadas con una ruta moderna de otra temporada.
       if (!seasonAnchor) continue;
-      const route = episodeRouteForSeason(seasonAnchor.ref, number, Math.max(1, Number(seasonAnchor.number) || 1));
+      // Si el único enlace de la temporada es VIP, comenzar por el capítulo 1
+      // en vez de abrir el capítulo VIP como si fuera la lista completa.
+      const anchorEpisodeNumber = seasonAnchor.vipFallback ? 1 : Math.max(1, Number(seasonAnchor.number) || 1);
+      const route = episodeRouteForSeason(seasonAnchor.ref, number, anchorEpisodeNumber);
       if (!route) continue;
       try {
         const seasonUrl = absolute(route, detailUrl);
@@ -1294,7 +1297,7 @@ export async function episodes(ref) {
         // no la lista entera. Recuperar los capítulos públicos desde sus rutas.
         if (seasonList.length <= 1) {
           const recovered = new Map(seasonList.map((episode) => [episode.number, episode]));
-          const anchorNumber = Math.max(1, Number(seasonAnchor.number) || 1);
+          const anchorNumber = anchorEpisodeNumber;
           // La ficha puede enlazar solo el episodio actual (p. ej. el 10). Primero
           // probamos ese episodio, después buscamos hacia atrás y hacia delante.
           // Un hueco no debe impedir descubrir episodios que sí existen.
