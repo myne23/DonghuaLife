@@ -1,7 +1,7 @@
 {
   "id": "donghualife-v3",
   "name": "DonghuaLife",
-  "version": "0.1.89",
+  "version": "0.1.90",
   "apiVersion": 6,
   "entry": "plugin.js",
   "description": "Busca donghua, series de animación china y episodios en DonghuaLife.",
@@ -86,5 +86,8 @@
     "episodes",
     "resolve"
   ],
-  "browser": "pages"
+  "browser": "pages",
+  "categories": [
+    "anime"
+  ]
 }

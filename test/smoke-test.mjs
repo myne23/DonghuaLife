@@ -286,7 +286,7 @@ globalThis.kino.fetch = async (input) => {
   if (url === 'https://donghualife.com/series/shrouding-the-heavens') {
     return {ok:true,status:200,async text(){return '<html><h1>Shrouding the Heavens</h1><p>Cargando...</p></html>';},async json(){return {};}};
   }
-  if (url === 'https://donghualife.com/series') {
+  if (url === 'https://donghualife.com/series' || url === 'https://donghualife.com/series?sort=az') {
     return {ok:true,status:200,async text(){return '<a href="/series/shrouding-heavens"><img alt="Shrouding the Heavens" src="/images/shrouding.jpg"></a>';},async json(){return {};}};
   }
   if (url === 'https://donghualife.com/series/shrouding-heavens') {
@@ -307,7 +307,7 @@ globalThis.kino.fetch = async (input) => {
   if (url === 'https://donghualife.com/series/shrouding-the-heavens') {
     return {ok:false,status:404,async text(){return '';},async json(){return {};}};
   }
-  if (url === 'https://donghualife.com/series') {
+  if (url === 'https://donghualife.com/series' || url === 'https://donghualife.com/series?sort=az') {
     const body = '<a href="/series/shrouding-heavens"><img alt="Shrouding the Heavens" src="/images/shrouding.jpg"></a>';
     return {ok:true,status:200,async text(){return body;},async json(){return {};}};
   }
