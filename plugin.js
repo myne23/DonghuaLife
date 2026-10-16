@@ -1206,7 +1206,7 @@ export async function episodes(ref) {
     }
   }
   const seasonCount = Math.max(declaredSeasons, listedMaxSeason, linkedMaxSeason);
-  if (seasonCount > 1 && firstEpisode) {
+  if ((seasonCount > 1 || list.filter((episode) => !episode.specialMovie).length <= 1) && firstEpisode) {
     for (let number = 1; number <= seasonCount; number++) {
       const existing = seasonItems(list, number);
       // Una sola referencia puede ser un enlace destacado de temporada, no la lista completa.
