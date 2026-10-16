@@ -2607,17 +2607,17 @@ async function resolveInner(ref) {
       html = retryHtml;
       log("Reintento directo de página completado", JSON.stringify({
         htmlChars: html.length,
-        hasNextData: /__NEXT_DATA__|self\\.__next_f|buildId/i.test(html),
+        hasNextData: /__NEXT_DATA__|self\.__next_f|buildId/i.test(html),
         hasPlayerText: /player|fuentes|source/i.test(html)
       }));
-      if (/solo\\s+para\\s+vip|requiere\\s+(?:una\\s+)?suscripci[oó]n|inicia\\s+sesi[oó]n\\s+para\\s+ver/i.test(textOf(html))) {
+      if (/solo\s+para\s+vip|requiere\s+(?:una\s+)?suscripci[oó]n|inicia\s+sesi[oó]n\s+para\s+ver/i.test(textOf(html))) {
         throw kino.error("unavailable", "Este episodio requiere acceso en el sitio");
       }
       const retryNative = await resolveNativePlayerSources(html, url);
       if (retryNative) return retryNative;
     }
   } catch (error) {
-    if (error && error.code === "unavailable") throw error;
+    if (String(error && error.message || error).includes("Este episodio requiere acceso en el sitio")) throw error;
     log("Falló el reintento directo del reproductor", String(error && error.message || error).slice(0, 100));
   }
 
