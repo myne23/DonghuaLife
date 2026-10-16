@@ -111,4 +111,45 @@ const sparseSecondBlock = await plugin.episodes(sparseFirst.seasons.find(season 
 assert.deepEqual(sparseSecondBlock.episodes.map(episode => episode.number), Array.from({length:10}, (_, i) => i + 51),
   "El bloque final de la segunda temporada debe devolver los capítulos 51–60");
 
+
+ // Regresión: el distintivo VIP puede estar antes del enlace dentro de la tarjeta.
+const precedingVipHtml = '<html><h1>Badge Series</h1><p>1 temporada</p>' +
+  '<div class="episode-card"><a href="/watch/badge-series-1-1">Capítulo 1</a></div>' +
+  '<div class="episode-card"><span class="vip-badge">VIP</span><a href="/watch/badge-series-1-2">Capítulo 2</a></div>' +
+  '<div class="episode-card"><a href="/watch/badge-series-1-3">Capítulo 3</a></div></html>';
+const precedingVipUrl = "https://donghualife.com/series/badge-series";
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === precedingVipUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return precedingVipHtml;}};
+  if (url.includes("/watch/badge-series-1-")) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return '<a href="' + new URL(url).pathname + '">Capítulo ' + /-(\d+)$/.exec(url)[1] + '</a>';}};
+  throw new Error("URL inesperada en prueba de VIP antes del enlace: " + url);
+};
+const precedingVipPlugin = await import("../plugin.js?vip-before-link-test=1");
+const precedingVip = await precedingVipPlugin.episodes("badge-series");
+assert.deepEqual(precedingVip.episodes.map(episode => episode.number), [1,3],
+  "Debe excluir el capítulo con VIP antes del enlace y conservar los capítulos públicos vecinos");
+
+// Regresión: una temporada que arranca en el 106 no debe generar bloques vacíos 1-50 y 51-100.
+const lateStartUrl = "https://donghualife.com/series/late-start-series";
+const lateStartHtml = '<html><h1>Late Start Series</h1><p>1 temporada</p>' +
+  '<div class="episode-card"><span class="vip-badge">VIP</span><a href="/watch/late-start-series-2-10">Capítulo 10</a></div>' +
+  Array.from({length:56}, (_, i) => {
+    const n = i + 106;
+    return '<div class="episode-card"><a href="/watch/late-start-series-2-' + n + '">Capítulo ' + n + '</a></div>';
+  }).join('') + '</html>';
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === lateStartUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return lateStartHtml;}};
+  if (url.startsWith("https://donghualife.com/watch/late-start-series-2-")) {
+    return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return lateStartHtml;}};
+  }
+  throw new Error("URL inesperada en prueba de temporada desde 106: " + url);
+};
+const lateStartPlugin = await import("../plugin.js?late-start-blocks-test=1");
+const lateStart = await lateStartPlugin.episodes("late-start-series");
+assert.deepEqual(lateStart.seasons.map(season => season.title), ["T2 · Capítulos 101–150", "T2 · Capítulos 151–161"],
+  "Los bloques deben empezar en el rango que contiene el primer episodio existente");
+assert.equal(lateStart.episodes[0].number, 106, "La lista inicial debe comenzar por el capítulo público 106");
+assert.ok(!lateStart.episodes.some(episode => episode.number === 10), "El capítulo 10 VIP no debe aparecer");
+
 console.log("Temporadas: filtro VIP, bloques de episodios, temporadas con metadatos desactualizados y fichas con un único enlace.");
