@@ -1140,29 +1140,35 @@ function findSeasonAnchor(html, pageUrl, wantedSeason) {
     anchors.push({ path, label, attributes, linkIsVip });
     if (linkIsVip) vipPaths.add(path);
   }
+  // Preferir siempre un episodio público como ancla. Si la ficha solo enlaza
+  // un episodio VIP de esa temporada (p. ej. T3 capítulo 4), conservarlo como
+  // último recurso para poder consultar la ruta del capítulo 1 y recuperar los
+  // episodios públicos; el ancla nunca se añade por sí misma a la lista visible.
+  let vipFallback = null;
   for (const anchor of anchors) {
     const path = anchor.path;
-    // Un enlace genérico anterior (p. ej. «Ver último») no puede ocultar
-    // que la misma ruta aparece marcada VIP en la lista de episodios.
-    if (vipPaths.has(path)) continue;
-    // No usar un episodio VIP como ancla de reconstrucción: si la ficha empieza
-    // con el 10 VIP, la recuperación volvería a crear una temporada desde el 1.
-    const anchorLabel = anchor.label;
-    const anchorAttributes = anchor.attributes;
-    if (anchor.linkIsVip || /\bVIP\b/i.test(anchorLabel) || /\bVIP\b/i.test(anchorAttributes)) continue;
     const modern = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
     const legacy = !modern && /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
     const route = modern || legacy;
     if (!route || Number(route[1]) !== wantedSeason) continue;
-    return {
+    // Un enlace genérico anterior (p. ej. «Ver último») no puede ocultar
+    // que la misma ruta aparece marcada VIP en la lista de episodios.
+    const isVipPath = vipPaths.has(path) || anchor.linkIsVip ||
+      /\bVIP\b/i.test(anchor.label) || /\bVIP\b/i.test(anchor.attributes);
+    const candidate = {
       season: Number(route[1]),
       number: Number(route[2]),
       ref: path,
       title: "Capítulo " + Number(route[2]),
       specialMovie: false
     };
+    if (isVipPath) {
+      if (!vipFallback) vipFallback = candidate;
+      continue;
+    }
+    return candidate;
   }
-  return null;
+  return vipFallback;
 }
 
 export async function episodes(ref) {
