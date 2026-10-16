@@ -414,10 +414,12 @@ async function resolveOkru(embedUrl) {
   const videos = metadata && Array.isArray(metadata.videos) ? metadata.videos.slice() : [];
   const rank = (v) => {
     const quality = String(v.name || v.quality || "").toLowerCase();
-    if (/1080|full/.test(quality)) return 0;
-    if (/720|hd/.test(quality)) return 1;
-    if (/480|sd/.test(quality)) return 2;
-    return 3;
+    const resolution = /(?:^|\\D)(4320|2160|1440|1080|960|720|540|480|360|240)(?:\\D|$)/.exec(quality);
+    if (resolution) return -Number(resolution[1]);
+    if (/full/.test(quality)) return -1080;
+    if (/hd/.test(quality)) return -720;
+    if (/sd/.test(quality)) return -480;
+    return 0;
   };
   const directVideo = (v) => typeof v.url === "string" && /^https:\/\//i.test(v.url) && /\.(?:mp4|webm)(?:[?#]|$)/i.test(v.url);
   videos.sort((a, b) => rank(a) - rank(b));
@@ -431,7 +433,8 @@ async function resolveOkru(embedUrl) {
     }));
   const direct = videos.find(directVideo);
   const hls = metadata && (metadata.hlsMasterPlaylistUrl || metadata.hlsManifestUrl || metadata.ondemandHls || metadata.hlsMasterUrl);
-  if (direct) {
+  // Preferir el manifiesto adaptativo cuando exista; los MP4 quedan como alternativas.
+  if (direct && !(typeof hls === "string" && /^https:\/\//i.test(hls))) {
     const result = {
       url: direct.url,
       mime: /\.webm(?:[?#]|$)/i.test(direct.url) ? "video/webm" : "video/mp4",
@@ -446,7 +449,7 @@ async function resolveOkru(embedUrl) {
     return result;
   }
   if (typeof hls === "string" && /^https:\/\//i.test(hls)) {
-    const result = { url: hls, mime: "application/vnd.apple.mpegurl", headers, label: "OK.ru · HLS" };
+    const result = { url: hls, mime: /\.mpd(?:[?#]|$)/i.test(hls) ? "application/dash+xml" : "application/vnd.apple.mpegurl", headers, label: /\.mpd(?:[?#]|$)/i.test(hls) ? "OK.ru · DASH" : "OK.ru · HLS" };
     result.alternatives = videoAlternatives(hls);
     if (!result.alternatives.length) delete result.alternatives;
     return result;
