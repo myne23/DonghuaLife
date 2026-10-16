@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
 const seriesUrl = "https://donghualife.com/series/vip-show";
+const longUrl = "https://donghualife.com/series/long-series";
+const longHtml = '<html><h1>Long Series</h1><p>1 Temporada</p>' +
+  Array.from({length:120}, (_, i) => '<a href="/watch/long-series-1-' + (i + 1) + '">Capítulo ' + (i + 1) + '</a>').join('') +
+  '</html>';
 const spareUrl = "https://donghualife.com/series/spare-me-great-lord";
 const spareEpisodeBase = "/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-";
 const spareHtml = '<html><h1>Spare Me, Great Lord!</h1><p>2 temporadas</p>' +
@@ -9,7 +13,7 @@ const spareHtml = '<html><h1>Spare Me, Great Lord!</h1><p>2 temporadas</p>' +
   '</html>';
 const spareSeasonThreeHtml = '<html><h1>Spare Me, Great Lord!</h1><p>Temporada 3</p>' +
   [1,2,3].map(n => '<div class="episode-card"><a href="' + spareEpisodeBase + n + '">Capítulo ' + n + '</a></div>').join("") +
-  '<div class="episode-card"><a href="' + spareEpisodeBase + '4">Capítulo 4VIP</a></div></html>';
+  '<div class="episode-card"><a href="' + spareEpisodeBase + '4">Capítulo 4</a><span class="badge">VIP</span></div></html>';
 const seriesHtml = '<html><head><meta property="og:image" content="/images/series.jpg"></head>' +
   '<h1>VIP Show</h1><p>4 Temporadas</p>' +
   [1,2,3,4].map(n => '<a href="/series/vip-show"><div class="season-card"><img alt="Portada ' + n + '" src="/images/season-' + n + '.jpg"><span>Temporada ' + n + '</span></div></a>').join("") +
@@ -27,6 +31,7 @@ globalThis.kino = {
   async fetch(input) {
     const url = String(input);
     if (url === seriesUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return seriesHtml;}};
+    if (url === longUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return longHtml;}};
     if (url === spareUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return spareHtml;}};
     if (url.includes("/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-1")) {
       return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return spareSeasonThreeHtml;}};
@@ -66,4 +71,21 @@ assert.ok(spareThirdRef, "Debe detectar la temporada 3 aunque la ficha diga que 
 const spareThird = await plugin.episodes(spareThirdRef);
 assert.deepEqual(spareThird.episodes.map(episode => episode.number), [1,2,3],
   "Debe usar la URL de T3 para recuperar los capítulos públicos y excluir el 4 VIP");
-console.log("Temporadas: excluye episodios VIP, detecta temporadas con metadatos desactualizados y usa rutas por temporada.");
+
+// Regresión: VIP como texto hermano fuera del enlace del episodio.
+assert.ok(!spareThird.episodes.some(episode => episode.number === 4),
+  "Debe excluir el capítulo si el distintivo VIP está fuera del enlace");
+
+// Series largas: Kino recibe bloques de 50 capítulos, con refs que vuelven a cargar el rango.
+const longFirst = await plugin.episodes("long-series");
+assert.equal(longFirst.episodes.length, 50, "El primer bloque debe contener 50 capítulos");
+assert.deepEqual(longFirst.episodes.map(episode => episode.number), Array.from({length:50}, (_, i) => i + 1));
+assert.equal(longFirst.seasons.length, 3, "120 capítulos deben dividirse en tres bloques");
+assert.equal(longFirst.seasons[0].title, "T1 · Capítulos 1–50");
+const longSecond = await plugin.episodes(longFirst.seasons[1].ref);
+assert.deepEqual(longSecond.episodes.map(episode => episode.number), Array.from({length:50}, (_, i) => i + 51),
+  "El segundo bloque debe devolver los capítulos 51–100");
+const longLast = await plugin.episodes(longFirst.seasons[2].ref);
+assert.deepEqual(longLast.episodes.map(episode => episode.number), Array.from({length:20}, (_, i) => i + 101),
+  "El último bloque debe devolver solo los capítulos restantes");
+console.log("Temporadas: filtro VIP, bloques de episodios y temporadas con metadatos desactualizados.");
