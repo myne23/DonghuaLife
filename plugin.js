@@ -1259,11 +1259,25 @@ export async function episodes(ref) {
       if (existing.length > 1) continue;
       // Usar una referencia de la propia temporada si existe: las temporadas pueden
       // cambiar de slug/ID y no compartir la base de URL de la primera temporada.
-      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) ||
+      const legacySeriesSlug = slugFromUrl(detailUrl);
+      const firstEpisodePath = String(firstEpisode?.ref || "");
+      // Algunas fichas antiguas (p. ej. Spare Me, Great Lord!) usan rutas
+      // compartidas /watch/<slug>-<temporada>-<episodio>. Si faltan los enlaces
+      // de T2 en la ficha, esa ruta permite reconstruirla sin inventar otra serie.
+      // No aplicar el fallback a rutas UUID /-temporada-, que pueden crear
+      // temporadas/bloques incorrectos en fichas como Supreme God Emperor.
+      const canReuseLegacyAnchor = Boolean(firstEpisode && legacySeriesSlug &&
+        firstEpisode.season !== number &&
+        new RegExp("^/watch/" + legacySeriesSlug.replace(/[.*+?^$\{\}()|[\]\\]/g, "\\      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) ||
         (firstEpisode && firstEpisode.season === number ? firstEpisode : null);
       // No inventar una temporada que no existe usando como ancla la primera
       // temporada visible. Esto creaba los bloques 1–50 y 51–100 para T2 que
       // realmente empieza en el capítulo público 106.
+      if (!seasonAnchor) continue;") + "-\\d+-\\d+/?$").test(firstEpisodePath));
+      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) ||
+        (firstEpisode && firstEpisode.season === number ? firstEpisode : null) ||
+        (canReuseLegacyAnchor ? firstEpisode : null);
+      // No inventar temporadas con una ruta moderna de otra temporada.
       if (!seasonAnchor) continue;
       const route = episodeRouteForSeason(seasonAnchor.ref, number, Math.max(1, Number(seasonAnchor.number) || 1));
       if (!route) continue;
