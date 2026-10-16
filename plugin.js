@@ -414,7 +414,7 @@ async function resolveOkru(embedUrl) {
   const videos = metadata && Array.isArray(metadata.videos) ? metadata.videos.slice() : [];
   const rank = (v) => {
     const quality = String(v.name || v.quality || "").toLowerCase();
-    const resolution = /(?:^|\\D)(4320|2160|1440|1080|960|720|540|480|360|240)(?:\\D|$)/.exec(quality);
+    const resolution = /(?:^|\D)(4320|2160|1440|1080|960|720|540|480|360|240)(?:\D|$)/.exec(quality);
     if (resolution) return -Number(resolution[1]);
     if (/full/.test(quality)) return -1080;
     if (/hd/.test(quality)) return -720;
