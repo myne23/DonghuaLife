@@ -330,7 +330,7 @@ function parseEpisodes(html, pageUrl) {
     const vipBadgePattern = /(?:\bdata-vip(?:\s*=\s*(?:["'](?:true|1|vip)["']|true|1))?|\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em|b)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em|b)>|>\s*VIP\s*<)/i;
     if (episodeLabelHasVip || episodeImageHasVip || vipAttributes ||
         vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink) ||
-        /\bVIP\b/i.test(textOf(afterLink))) {
+        /\bVIP\b/i.test(textOf(afterLink).slice(0, 120))) {
       seen.add(path);
       continue;
     }
@@ -602,7 +602,7 @@ function parseLatestSeries(html) {
     const vipBadgePattern = /(?:\bdata-vip(?:\s*=\s*(?:["'](?:true|1|vip)["']|true|1))?|\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em|b)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em|b)>|>\s*VIP\s*<)/i;
     if (episodeLabelHasVip || episodeImageHasVip || vipAttributes ||
         vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink) ||
-        /\bVIP\b/i.test(textOf(afterLink))) {
+        /\bVIP\b/i.test(textOf(afterLink).slice(0, 120))) {
       continue;
     }
     // La web pasó a identificadores opacos con el sufijo -temporada-1-5.
