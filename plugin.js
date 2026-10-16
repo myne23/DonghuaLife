@@ -319,7 +319,8 @@ function parseEpisodes(html, pageUrl) {
     const url = absolute(match[2], pageUrl);
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
-    if (seen.has(path)) continue;
+    // No deduplicar todavía: la misma ruta puede aparecer antes como «Ver último»
+    // y después en la tarjeta real con la marca VIP. La marca VIP siempre prevalece.
     const linkLabel = textOf(match[3]);
     const innerImageForVip = /<img\b[^>]*>/i.exec(match[3]);
     const imageLabelForVip = innerImageForVip
@@ -348,8 +349,14 @@ function parseEpisodes(html, pageUrl) {
         vipBadgePattern.test(afterLink) ||
         /\bVIP\b/i.test(textOf(afterLink).slice(0, 120))) {
       seen.add(path);
+      // Si la misma ruta ya había entrado por un enlace genérico anterior
+      // («Ver último», botón destacado, etc.), eliminarla también de la lista.
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (out[i].ref === path) out.splice(i, 1);
+      }
       continue;
     }
+    if (seen.has(path)) continue;
     // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
     const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
@@ -1114,21 +1121,35 @@ function seasonItems(list, season) {
 // Recupera una ruta por temporada incluso cuando el único enlace visible de esa
 // temporada es VIP y parseEpisodes lo excluye de la lista reproducible.
 function findSeasonAnchor(html, pageUrl, wantedSeason) {
+  const sourceHtml = String(html || "");
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const anchors = [];
+  const vipPaths = new Set();
   let match;
-  while ((match = re.exec(String(html || "")))) {
+  while ((match = re.exec(sourceHtml))) {
     const url = absolute(match[2], pageUrl);
-    // No usar un episodio VIP como ancla de reconstrucción: si la ficha empieza
-    // con el 10 VIP, la recuperación volvería a crear una temporada desde el 1.
-    const anchorLabel = textOf(match[3]);
-    const anchorAttributes = [
+    let path = "";
+    try { path = new URL(url).pathname; } catch { continue; }
+    const label = textOf(match[3]);
+    const attributes = [
       attr(match[0], "class"), attr(match[0], "id"),
       attr(match[0], "aria-label"), attr(match[0], "title"),
       attr(match[0], "data-label"), attr(match[0], "data-title")
     ].join(" ");
-    if (/\bVIP\b/i.test(anchorLabel) || /\bVIP\b/i.test(anchorAttributes)) continue;
-    let path = "";
-    try { path = new URL(url).pathname; } catch { continue; }
+    const linkIsVip = /\bVIP\b/i.test(label) || /\bVIP\b/i.test(attributes);
+    anchors.push({ path, label, attributes, linkIsVip });
+    if (linkIsVip) vipPaths.add(path);
+  }
+  for (const anchor of anchors) {
+    const path = anchor.path;
+    // Un enlace genérico anterior (p. ej. «Ver último») no puede ocultar
+    // que la misma ruta aparece marcada VIP en la lista de episodios.
+    if (vipPaths.has(path)) continue;
+    // No usar un episodio VIP como ancla de reconstrucción: si la ficha empieza
+    // con el 10 VIP, la recuperación volvería a crear una temporada desde el 1.
+    const anchorLabel = anchor.label;
+    const anchorAttributes = anchor.attributes;
+    if (anchor.linkIsVip || /\bVIP\b/i.test(anchorLabel) || /\bVIP\b/i.test(anchorAttributes)) continue;
     const modern = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
     const legacy = !modern && /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
     const route = modern || legacy;
@@ -1238,7 +1259,12 @@ export async function episodes(ref) {
       if (existing.length > 1) continue;
       // Usar una referencia de la propia temporada si existe: las temporadas pueden
       // cambiar de slug/ID y no compartir la base de URL de la primera temporada.
-      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) || firstEpisode;
+      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) ||
+        (firstEpisode && firstEpisode.season === number ? firstEpisode : null);
+      // No inventar una temporada que no existe usando como ancla la primera
+      // temporada visible. Esto creaba los bloques 1–50 y 51–100 para T2 que
+      // realmente empieza en el capítulo público 106.
+      if (!seasonAnchor) continue;
       const route = episodeRouteForSeason(seasonAnchor.ref, number, Math.max(1, Number(seasonAnchor.number) || 1));
       if (!route) continue;
       try {
