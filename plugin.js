@@ -294,14 +294,9 @@ function parseEpisodes(html, pageUrl) {
   const specialRange = /Peli(?:\s*Ep)?\s*(\d+)\s*-\s*(\d+)/i.exec(specialLabel);
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
-  let previousWatchEnd = 0;
   while ((match = re.exec(html)) && out.length < 2000) {
-    const previousEpisodeEnd = previousWatchEnd;
-    previousWatchEnd = re.lastIndex;
-    const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 1400), match.index);
-    // El badge puede estar en un elemento hermano cerrado antes del enlace.
-    // Limitamos la búsqueda a la cola inmediata entre episodios para no revisar toda la página.
-    const beforeLink = precedingMarkup.slice(-700);
+    // No buscamos VIP en un bloque amplio anterior al enlace: puede incluir el badge
+    // del capítulo previo y marcar falsamente como VIP el siguiente capítulo público.
     const url = absolute(match[2], pageUrl);
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
@@ -329,7 +324,7 @@ function parseEpisodes(html, pageUrl) {
     ].some((value) => /\bVIP\b/i.test(value));
     const vipBadgePattern = /(?:\bdata-vip(?:\s*=\s*(?:["'](?:true|1|vip)["']|true|1))?|\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em|b)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em|b)>|>\s*VIP\s*<)/i;
     if (episodeLabelHasVip || episodeImageHasVip || vipAttributes ||
-        vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink) ||
+        vipBadgePattern.test(afterLink) ||
         /\bVIP\b/i.test(textOf(afterLink).slice(0, 120))) {
       seen.add(path);
       continue;
