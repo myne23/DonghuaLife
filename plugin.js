@@ -320,8 +320,8 @@ function parseEpisodes(html, pageUrl) {
     const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
     const afterLink = tail.slice(0, nextEpisodeLink ? nextEpisodeLink.index : tail.length);
     // No detectar la palabra VIP en un título de serie como «VIP Show».
-    const episodeLabelHasVip = /(?:^|\b)(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}\bVIP\b/i.test(linkLabel);
-    const episodeImageHasVip = /^(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}\bVIP\b/i.test(imageLabelForVip.trim());
+    const episodeLabelHasVip = /(?:^|\b)(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(linkLabel);
+    const episodeImageHasVip = /^(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(imageLabelForVip.trim());
     const vipAttributes = [
       attr(match[0], "class"), attr(match[0], "id"),
       attr(match[0], "aria-label"), attr(match[0], "title"),
@@ -592,8 +592,8 @@ function parseLatestSeries(html) {
     const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 1800));
     const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
     const afterLink = tail.slice(0, nextEpisodeLink ? nextEpisodeLink.index : tail.length);
-    const episodeLabelHasVip = /(?:^|\b)(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}\bVIP\b/i.test(linkLabel);
-    const episodeImageHasVip = /^(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}\bVIP\b/i.test(imageLabelForVip.trim());
+    const episodeLabelHasVip = /(?:^|\b)(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(linkLabel);
+    const episodeImageHasVip = /^(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(imageLabelForVip.trim());
     const vipAttributes = [
       attr(match[0], "class"), attr(match[0], "id"),
       attr(match[0], "aria-label"), attr(match[0], "title"),
