@@ -11,6 +11,10 @@ const spareUrl = "https://donghualife.com/series/spare-me-great-lord";
 const spareEpisodeBase = "/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-";
 const spareHtml = '<html><h1>Spare Me, Great Lord!</h1><p>2 temporadas</p>' +
   '<a href="/watch/spare-me-great-lord-1-1">Capítulo 1</a>' +
+  // Simular el fallo real: el parser conserva E2 y E3, pero pierde E1;
+  // el E4 VIP aparece aparte y no debe usarse como ancla de la lista.
+  '<div class="episode-card"><a href="' + spareEpisodeBase + '2">Capítulo 2</a></div>' +
+  '<div class="episode-card"><a href="' + spareEpisodeBase + '3">Capítulo 3</a></div>' +
   '<div class="episode-card"><a href="' + spareEpisodeBase + '4">Capítulo 4</a></div><span class="vip-badge">VIP</span>' +
   '</html>';
 const spareSeasonThreeHtml = '<html><h1>Spare Me, Great Lord!</h1><p>Temporada 3</p>' +
