@@ -1268,12 +1268,7 @@ export async function episodes(ref) {
       // temporadas/bloques incorrectos en fichas como Supreme God Emperor.
       const canReuseLegacyAnchor = Boolean(firstEpisode && legacySeriesSlug &&
         firstEpisode.season !== number &&
-        new RegExp("^/watch/" + legacySeriesSlug.replace(/[.*+?^$\{\}()|[\]\\]/g, "\\      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) ||
-        (firstEpisode && firstEpisode.season === number ? firstEpisode : null);
-      // No inventar una temporada que no existe usando como ancla la primera
-      // temporada visible. Esto creaba los bloques 1–50 y 51–100 para T2 que
-      // realmente empieza en el capítulo público 106.
-      if (!seasonAnchor) continue;") + "-\\d+-\\d+/?$").test(firstEpisodePath));
+        new RegExp("^/watch/" + legacySeriesSlug + "-\\d+-\\d+/?$").test(firstEpisodePath));
       const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) ||
         (firstEpisode && firstEpisode.season === number ? firstEpisode : null) ||
         (canReuseLegacyAnchor ? firstEpisode : null);
