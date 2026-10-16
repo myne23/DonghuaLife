@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 const seriesUrl = "https://donghualife.com/series/vip-show";
 const longUrl = "https://donghualife.com/series/long-series";
+const sparseUrl = "https://donghualife.com/series/sparse-series";
+const sparseHtml = '<html><h1>Sparse Series</h1><p>2 temporadas</p><a href="/watch/sparse-series-1-10">Capítulo 10</a></html>';
 const longHtml = '<html><h1>Long Series</h1><p>1 Temporada</p>' +
   Array.from({length:120}, (_, i) => '<a href="/watch/long-series-1-' + (i + 1) + '">Capítulo ' + (i + 1) + '</a>').join('') +
   '</html>';
@@ -32,6 +34,14 @@ globalThis.kino = {
     const url = String(input);
     if (url === seriesUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return seriesHtml;}};
     if (url === longUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return longHtml;}};
+    if (url === sparseUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return sparseHtml;}};
+    const sparseEpisode = /\/watch\/sparse-series-(\d+)-(\d+)$/.exec(new URL(url).pathname);
+    if (sparseEpisode) {
+      const season = Number(sparseEpisode[1]), episode = Number(sparseEpisode[2]);
+      if (season > 2 || episode > 60) throw new Error("Episodio fuera de fixture");
+      const html = '<html><h1>Sparse Series</h1><a href="/watch/sparse-series-' + season + '-' + episode + '">Capítulo ' + episode + '</a></html>';
+      return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return html;}};
+    }
     if (url === spareUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return spareHtml;}};
     if (url.includes("/watch/436574ad-4b73-4f86-8f30-659d5cbc0afc-temporada-3-1")) {
       return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return spareSeasonThreeHtml;}};
@@ -88,4 +98,17 @@ assert.deepEqual(longSecond.episodes.map(episode => episode.number), Array.from(
 const longLast = await plugin.episodes(longFirst.seasons[2].ref);
 assert.deepEqual(longLast.episodes.map(episode => episode.number), Array.from({length:20}, (_, i) => i + 101),
   "El último bloque debe devolver solo los capítulos restantes");
-console.log("Temporadas: filtro VIP, bloques de episodios y temporadas con metadatos desactualizados.");
+// Regresión: la ficha solo muestra el capítulo 10, pero las rutas públicas contienen
+// una temporada larga y la segunda temporada no tiene un enlace propio en la ficha.
+const sparseFirst = await plugin.episodes("sparse-series");
+assert.equal(sparseFirst.seasons.length, 4, "Dos temporadas de 60 episodios deben generar dos bloques por temporada");
+assert.deepEqual(sparseFirst.episodes.map(episode => episode.number), Array.from({length:50}, (_, i) => i + 1),
+  "Debe reconstruir la primera temporada aunque la ficha solo enlaza el capítulo 10");
+const sparseSecondSeason = await plugin.episodes(sparseFirst.seasons.find(season => season.ref.includes(":2:1")).ref);
+assert.deepEqual(sparseSecondSeason.episodes.map(episode => episode.number), Array.from({length:50}, (_, i) => i + 1),
+  "Debe recuperar la segunda temporada a partir de la ruta de la temporada anterior");
+const sparseSecondBlock = await plugin.episodes(sparseFirst.seasons.find(season => season.ref.includes(":2:51")).ref);
+assert.deepEqual(sparseSecondBlock.episodes.map(episode => episode.number), Array.from({length:10}, (_, i) => i + 51),
+  "El bloque final de la segunda temporada debe devolver los capítulos 51–60");
+
+console.log("Temporadas: filtro VIP, bloques de episodios, temporadas con metadatos desactualizados y fichas con un único enlace.");
