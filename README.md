@@ -18,7 +18,7 @@ Plugin comunitario para consultar el catálogo público de [DonghuaLife](https:/
 3. Introduce `myne23/DonghuaLife`.
 4. Revisa los hosts que se muestran y acepta solo si estás de acuerdo.
 
-La versión 0.1.51 intenta resolver Dailymotion desde el DOM del reproductor ya ejecutado, antes de usar la captura de red que puede incluir respuestas VMAP de anuncios. La versión 0.1.50 había añadido el descarte de solicitudes de error disfrazadas de HLS y diagnóstico seguro sin registrar URLs, tokens ni cookies.
+El plugin incluye resolutores específicos para las fuentes declaradas en `kino-plugin.json` y filtros para evitar tratar respuestas de anuncios como fuentes de vídeo. Los proveedores pueden cambiar sus reproductores, por lo que una prueba automatizada con respuestas simuladas no garantiza la reproducción de todos los episodios.
 
 ## Estado del desarrollo
 
