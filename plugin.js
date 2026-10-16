@@ -1229,49 +1229,36 @@ export async function episodes(ref) {
         if (seasonList.length <= 1) {
           const recovered = new Map(seasonList.map((episode) => [episode.number, episode]));
           const anchorNumber = Math.max(1, Number(seasonAnchor.number) || 1);
-          // No asumir que el primer enlace de la ficha es el capítulo 1.
-          // En algunas series la ficha solo expone el episodio actual (p. ej. 10).
-          // Exploramos desde ese episodio hacia atrás y luego hacia delante; así un
-          // hueco inicial no cancela la recuperación de los capítulos restantes.
-          const probes = [
-            anchorNumber,
-            ...Array.from({ length: anchorNumber - 1 }, (_, i) => anchorNumber - i - 1),
-            ...Array.from({ length: Math.max(0, 100 - anchorNumber) }, (_, i) => anchorNumber + i + 1)
-          ].filter((n) => n >= 1 && n <= 100);
-          let misses = 0;
-          let passedAnchor = false;
-          for (const episodeNumber of probes) {
-            if (recovered.has(episodeNumber)) {
-              if (episodeNumber >= anchorNumber) passedAnchor = true;
-              misses = 0;
-              continue;
-            }
+          // La ficha puede enlazar solo el episodio actual (p. ej. el 10). Primero
+          // probamos ese episodio, después buscamos hacia atrás y hacia delante.
+          // Un hueco no debe impedir descubrir episodios que sí existen.
+          const probeEpisode = async (episodeNumber) => {
+            if (recovered.has(episodeNumber)) return true;
             const episodeRoute = episodeRouteForSeason(seasonAnchor.ref, number, episodeNumber);
-            if (!episodeRoute) continue;
+            if (!episodeRoute) return false;
             try {
               const episodeUrl = absolute(episodeRoute, detailUrl);
+              // seasonUrl siempre apunta al capítulo 1 de la temporada seleccionada.
               const episodeHtml = episodeNumber === 1 ? seasonHtml : await getText(episodeUrl);
               const episodeItems = seasonItems(parseEpisodes(episodeHtml, episodeUrl), number);
               const exact = episodeItems.find((episode) => episode.number === episodeNumber);
-              if (exact) {
-                recovered.set(episodeNumber, exact);
-                misses = 0;
-                if (episodeNumber >= anchorNumber) passedAnchor = true;
-              } else {
-                misses++;
-              }
-            } catch (error) {
-              misses++;
+              if (!exact) return false;
+              recovered.set(episodeNumber, exact);
+              return true;
+            } catch {
+              return false;
             }
-            // Antes del episodio ancla permitimos huecos; después, la numeración suele
-            // ser consecutiva, así que cortamos tras varios fallos para no hacer 100
-            // solicitudes a una serie corta.
-            if (passedAnchor && episodeNumber > anchorNumber && misses >= 5) break;
-            if (!passedAnchor && episodeNumber < anchorNumber && misses >= 5) {
-              // No descartamos la búsqueda hacia delante: reiniciamos el contador.
-              misses = 0;
-              passedAnchor = true;
-            }
+          };
+          await probeEpisode(anchorNumber);
+          let misses = 0;
+          for (let episodeNumber = anchorNumber - 1; episodeNumber >= 1; episodeNumber--) {
+            if (await probeEpisode(episodeNumber)) misses = 0;
+            else if (++misses >= 5) break;
+          }
+          misses = 0;
+          for (let episodeNumber = anchorNumber + 1; episodeNumber <= 100; episodeNumber++) {
+            if (await probeEpisode(episodeNumber)) misses = 0;
+            else if (++misses >= 5) break;
           }
           if (recovered.size > seasonList.length) {
             seasonList = Array.from(recovered.values()).sort((a, b) => a.number - b.number);
