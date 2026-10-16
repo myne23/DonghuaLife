@@ -572,7 +572,10 @@ function parseLatestSeries(html) {
   const seen = new Set();
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
+  let previousWatchEnd = 0;
   while ((match = re.exec(html)) && out.length < MAX_PAGE) {
+    const previousEpisodeEnd = previousWatchEnd;
+    previousWatchEnd = re.lastIndex;
     const url = absolute(match[2]);
     let path = "";
     try { path = new URL(url).pathname; } catch { continue; }
@@ -580,7 +583,7 @@ function parseLatestSeries(html) {
     const innerImageForVip = /<img\b[^>]*>/i.exec(match[3]);
     const imageLabelForVip = innerImageForVip
       ? (attr(innerImageForVip[0], "alt") || attr(innerImageForVip[0], "title")) : "";
-    const precedingMarkup = html.slice(Math.max(0, match.index - 1400), match.index);
+    const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 1400), match.index);
     const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 1800));
     const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
     const afterLink = tail.slice(0, nextEpisodeLink ? nextEpisodeLink.index : tail.length);
