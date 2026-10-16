@@ -1265,7 +1265,7 @@ export async function episodes(ref) {
       // el capítulo 2 o posterior, no asumir que la temporada está completa.
       // Consultar siempre la ruta canónica TnE1 y reconstruir desde esa página.
       // Esto no afecta las rutas antiguas de Supreme God Emperor ni Against the Sky Supreme.
-      const modernUuidRoute = /^\\/watch\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-temporada-\\d{1,3}-\\d{1,4}\\/?$/i;
+      const modernUuidRoute = /^\/watch\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-temporada-\d{1,3}-\d{1,4}\/?$/i;
       const listedModernUuid = existing.find((episode) => modernUuidRoute.test(String(episode.ref || "")));
       const discoveredAnchor = findSeasonAnchor(html, detailUrl, number);
       const modernUuidAnchor = listedModernUuid ||
