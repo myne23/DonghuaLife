@@ -15,7 +15,7 @@ const homeHtml = [
   '<h3><a href="/series/epsilon"><img alt="Epsilon Donghua" src="/images/epsilon.jpg"></a></h3>',
   '<h3><a href="/series/zeta"><img alt="Zeta Donghua" src="/images/zeta.jpg"></a></h3>'
 ].join('');
-const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-temporada-1-5"><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a><a href="/ultimos-episodios?page=2">2</a>';
+const latestHtml = '<a href="/watch/ce435b74-45e1-4f5c-a2ee-29c51f432203-temporada-1-5"><img alt="Gamma Donghua" src="/images/gamma.jpg"><span>Capítulo 5</span></a><a href="/watch/vip-donghua-1-7"><span>Capítulo 7</span></a><span class="badge">VIP</span><a href="/ultimos-episodios?page=2">2</a>';
 const latestPageTwoHtml = '<a href="/watch/new-episode-donghua-1-6"><img alt="New Episode Donghua" src="/images/new.jpg"><span>Capítulo 6</span></a><a href="/ultimos-episodios?page=1">1</a><a href="/ultimos-episodios?page=2">2</a>';
 const catalogHtml = [
   '<article><span>Finalizado</span><a href="/series/alpha"><img alt="Alpha Donghua" src="/images/alpha.jpg"></a></article>',
@@ -103,6 +103,7 @@ const pageMoviesHome = await plugin.browse('peliculas-home', null);
 assert.equal(pageMoviesHome.items[0].title, 'Movie Two', 'Ver más desde Home debe saltar las películas ya mostradas en la fila');
 const pageLatest = await plugin.browse('ultimos-episodios', null);
 assert.equal(pageLatest.items[0].title, 'Gamma Donghua');
+assert.equal(pageLatest.items.length, 1, 'Últimos episodios debe excluir los capítulos marcados VIP fuera del enlace');
 assert.equal(JSON.parse(pageLatest.next).page, 2, 'Últimos episodios debe ofrecer otra página');
 assert.ok(pageLatest.next.length < 2048, 'El cursor de Últimos Episodios debe caber en el límite de Kino');
 const pageLatest2 = await plugin.browse('ultimos-episodios', pageLatest.next);
