@@ -1650,41 +1650,12 @@ async function resolveOdyseeDirectMedia(mediaUrl, stream) {
       if (cached) claim = JSON.parse(cached);
     } catch {}
 
+    // No consultar la API pública de Odysee durante el arranque del capítulo.
+    // Puede tardar 8-16 s o agotar el tiempo; la URL capturada del CDN ya es
+    // suficiente para conservar esta fuente como alternativa manual.
+    // Solo reconstruimos la URL si los metadatos ya están disponibles en caché.
     if (!claim) {
-      try {
-        // El proxy de resolve es relajado: no enviar Authorization ni cookies
-        // permite que Odysee aproveche su caché compartida.
-        await kino.sleep(500);
-        const response = await kino.fetch(
-          "https://api.na-backend.odysee.com/api/v1/proxy?m=resolve",
-          {
-            method: "POST",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json-rpc",
-              "User-Agent": headers["User-Agent"]
-            },
-            body: JSON.stringify({ jsonrpc: "2.0", method: "resolve", params: { urls: [uri] }, id: 1 }),
-            timeoutMs: 8000
-          }
-        );
-        let data = null;
-        try { data = JSON.parse(response.text()); } catch {}
-        const result = data && data.result;
-        claim = result && (result[uri] || result[uri.toLowerCase()] ||
-          Object.values(result).find((item) => item && String(item.claim_id || "").toLowerCase() === claimId));
-        if (response.status === 429) {
-          log("Odysee resolve: HTTP 429; se conserva URL CDN capturada");
-        } else if (!response.ok || data && data.error) {
-          log("Odysee resolve: respuesta no válida", "HTTP=" + response.status,
-            "rpcError=" + Boolean(data && data.error));
-        } else if (claim && claim.value && claim.value.source) {
-          try { kino.storage.set(cacheKey, JSON.stringify(claim), { ttlMs: 6 * 60 * 60 * 1000 }); } catch {}
-          log("Odysee resolve: metadatos guardados en caché", "claim=" + claimId.slice(0, 8));
-        }
-      } catch (error) {
-        log("Odysee resolve: no disponible; se conserva URL CDN capturada");
-      }
+      log("Odysee: sin metadatos en caché; se conserva URL CDN capturada");
     } else {
       log("Odysee resolve: metadatos reutilizados desde caché");
     }
