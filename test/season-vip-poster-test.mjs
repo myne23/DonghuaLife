@@ -200,4 +200,29 @@ assert.equal(against.episodes[0].number, 1);
 assert.equal(against.episodes.at(-1).number, 556);
 assert.ok(!against.episodes.some(episode => episode.number === 557), "El 557 VIP debe excluirse aunque Ver último lo enlace antes");
 
+
+// Regresión: si la ficha antigua solo enlaza T1 pero declara 2 temporadas,
+// reconstruir T2 desde la ruta compartida /watch/<slug>-2-1.
+const legacyTwoSeasonUrl = "https://donghualife.com/series/legacy-two-season";
+const legacyTwoSeasonHtml = '<html><h1>Legacy Two Season</h1><p>2 temporadas</p>' +
+  Array.from({length:12}, (_, i) => '<a href="/watch/legacy-two-season-1-' + (i + 1) + '">Capítulo ' + (i + 1) + '</a>').join('') +
+  '</html>';
+const legacySeasonTwoHtml = '<html><h1>Legacy Two Season</h1><p>Temporada 2</p>' +
+  Array.from({length:12}, (_, i) => '<a href="/watch/legacy-two-season-2-' + (i + 1) + '">Capítulo ' + (i + 1) + '</a>').join('') +
+  '</html>';
+globalThis.kino.fetch = async (input) => {
+  const url = String(input);
+  if (url === legacyTwoSeasonUrl) return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return legacyTwoSeasonHtml;}};
+  if (url === "https://donghualife.com/watch/legacy-two-season-2-1") {
+    return {ok:true,status:200,headers:{"content-type":"text/html"},text(){return legacySeasonTwoHtml;}};
+  }
+  throw new Error("URL inesperada en prueba de reconstrucción de temporada legacy: " + url);
+};
+const legacyTwoSeasonPlugin = await import("../plugin.js?legacy-two-season-reconstruction=1");
+const legacyTwoSeason = await legacyTwoSeasonPlugin.episodes("legacy-two-season");
+assert.ok(legacyTwoSeason.seasons.some(season => /T2/.test(season.title)),
+  "La temporada 2 debe reconstruirse para rutas legacy compartidas");
+assert.ok(legacyTwoSeason.episodes.some(episode => episode.season === 2 && episode.number === 1),
+  "Debe incluir el primer capítulo público de la temporada 2 legacy");
+
 console.log("Temporadas: filtro VIP, bloques de episodios, temporadas con metadatos desactualizados y fichas con un único enlace.");
