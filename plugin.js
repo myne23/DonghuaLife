@@ -300,7 +300,7 @@ function parseEpisodes(html, pageUrl) {
     previousWatchEnd = re.lastIndex;
     const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 1400), match.index);
     // Recortar el contenido de la tarjeta anterior para que su distintivo no se herede.
-    const blockClosers = /<\\/(?:div|li|article|section|ul|ol)\\s*>/gi;
+    const blockClosers = /<\/(?:div|li|article|section|ul|ol)\s*>/gi
     let blockCloser;
     let lastBlockEnd = -1;
     while ((blockCloser = blockClosers.exec(precedingMarkup))) lastBlockEnd = blockClosers.lastIndex;
@@ -588,7 +588,7 @@ function parseLatestSeries(html) {
     const imageLabelForVip = innerImageForVip
       ? (attr(innerImageForVip[0], "alt") || attr(innerImageForVip[0], "title")) : "";
     const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 1400), match.index);
-    const blockClosers = /<\\/(?:div|li|article|section|ul|ol)\\s*>/gi;
+    const blockClosers = /<\/(?:div|li|article|section|ul|ol)\s*>/gi
     let blockCloser;
     let lastBlockEnd = -1;
     while ((blockCloser = blockClosers.exec(precedingMarkup))) lastBlockEnd = blockClosers.lastIndex;
