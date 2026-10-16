@@ -294,9 +294,15 @@ function parseEpisodes(html, pageUrl) {
   const specialRange = /Peli(?:\s*Ep)?\s*(\d+)\s*-\s*(\d+)/i.exec(specialLabel);
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
+  let previousWatchEnd = 0;
   while ((match = re.exec(html)) && out.length < 2000) {
-    // No buscamos VIP en un bloque amplio anterior al enlace: puede incluir el badge
-    // del capítulo previo y marcar falsamente como VIP el siguiente capítulo público.
+    // Solo inspeccionamos el markup previo perteneciente a la tarjeta actual.
+    // No usamos una ventana fija que pueda alcanzar el badge de la tarjeta anterior.
+    const precedingMarkup = html.slice(previousWatchEnd, match.index);
+    const cardStarts = Array.from(precedingMarkup.matchAll(/<(?:div|li|article|section)\b[^>]*(?:class|id)\s*=\s*(["\'][^"\']*(?:episode|chapter|capitulo|card|item|video)[^"\']*["\'])[^>]*>/gi));
+    const currentCardMarkup = cardStarts.length
+      ? precedingMarkup.slice(cardStarts[cardStarts.length - 1].index)
+      : "";
     const url = absolute(match[2], pageUrl);
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
@@ -314,6 +320,7 @@ function parseEpisodes(html, pageUrl) {
     const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 1800));
     const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
     const afterLink = tail.slice(0, nextEpisodeLink ? nextEpisodeLink.index : tail.length);
+    previousWatchEnd = re.lastIndex;
     // No detectar la palabra VIP en un título de serie como «VIP Show».
     const episodeLabelHasVip = /(?:^|\b)(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(linkLabel);
     const episodeImageHasVip = /^(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(imageLabelForVip.trim());
@@ -324,6 +331,7 @@ function parseEpisodes(html, pageUrl) {
     ].some((value) => /\bVIP\b/i.test(value));
     const vipBadgePattern = /(?:\bdata-vip(?:\s*=\s*(?:["'](?:true|1|vip)["']|true|1))?|\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em|b)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em|b)>|>\s*VIP\s*<)/i;
     if (episodeLabelHasVip || episodeImageHasVip || vipAttributes ||
+        vipBadgePattern.test(currentCardMarkup) ||
         vipBadgePattern.test(afterLink) ||
         /\bVIP\b/i.test(textOf(afterLink).slice(0, 120))) {
       seen.add(path);
@@ -1209,7 +1217,7 @@ export async function episodes(ref) {
       // Usar una referencia de la propia temporada si existe: las temporadas pueden
       // cambiar de slug/ID y no compartir la base de URL de la primera temporada.
       const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) || firstEpisode;
-      const route = episodeRouteForSeason(seasonAnchor.ref, number);
+      const route = episodeRouteForSeason(seasonAnchor.ref, number, Math.max(1, Number(seasonAnchor.number) || 1));
       if (!route) continue;
       try {
         const seasonUrl = absolute(route, detailUrl);
@@ -1297,16 +1305,18 @@ export async function episodes(ref) {
     seasons = [];
     for (const number of seasonNumbers) {
       const seasonEpisodes = regularEpisodes.filter((episode) => episode.season === number);
+      const minNumber = seasonEpisodes.reduce((min, episode) => Math.min(min, episode.number), Infinity);
       const maxNumber = seasonEpisodes.reduce((max, episode) => Math.max(max, episode.number), 0);
-      for (let start = 1; start <= maxNumber; start += blockSize) {
+      const firstBlockStart = Number.isFinite(minNumber) ? Math.floor((minNumber - 1) / blockSize) * blockSize + 1 : 1;
+      for (let start = firstBlockStart; start <= maxNumber; start += blockSize) {
         const end = Math.min(start + blockSize - 1, maxNumber);
         seasons.push({
           id: slug + "-s" + number + "-block-" + start,
           ref: "block:" + slug + ":" + number + ":" + start,
           title: "T" + number + " · Capítulos " + start + "–" + end,
           number: Math.min(999, number),
-          current: selectedSeason ? number === selectedSeason && (selectedBlockStart || 1) === start
-            : number === (seasonNumbers[0] || 1) && start === 1
+          current: selectedSeason ? number === selectedSeason && (selectedBlockStart || firstBlockStart) === start
+            : number === (seasonNumbers[0] || 1) && start === firstBlockStart
         });
       }
     }
@@ -1340,7 +1350,12 @@ export async function episodes(ref) {
     info.poster = selectedSeasonPoster;
     info.backdrop = selectedSeasonPoster;
   }
-  const activeBlockStart = selectedBlockStart || 1;
+  const effectiveSeasonEpisodes = regularEpisodes.filter((episode) => episode.season === effectiveSeason);
+  const firstEffectiveEpisode = effectiveSeasonEpisodes.reduce((min, episode) => Math.min(min, episode.number), Infinity);
+  const defaultBlockStart = Number.isFinite(firstEffectiveEpisode)
+    ? Math.floor((firstEffectiveEpisode - 1) / blockSize) * blockSize + 1
+    : 1;
+  const activeBlockStart = selectedBlockStart || defaultBlockStart;
   const selectedEpisodes = regularEpisodes.filter((episode) =>
     episode.season === effectiveSeason &&
     (!(needsEpisodeBlocks || blockMatch) ||
