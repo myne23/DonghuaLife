@@ -5,6 +5,7 @@
 const BASE = "https://donghualife.com";
 const SERIES = BASE + "/series";
 const OK = "https://ok.ru";
+const BROWSER_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
 const MAX_HOME = 30;
 const MAX_PAGE = 50;
 
@@ -69,7 +70,7 @@ async function getText(url, options) {
       }
       if (attempt + 1 < attempts) {
         // Una única pausa corta solo cuando ambos hosts fallan.
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await kino.sleep(200);
       }
     }
     throw lastError || new Error("No se pudo leer la página");
@@ -394,6 +395,10 @@ function parsePlayerOptions(html) {
   return null;
 }
 
+function hlsOrDashMime(url) {
+  return /\.mpd(?:[?#]|$)/i.test(url) ? "application/dash+xml" : "application/vnd.apple.mpegurl";
+}
+
 async function resolveOkru(embedUrl) {
   const match = /\/video(?:embed)?\/(\d+)/i.exec(embedUrl);
   if (!match) throw new Error("El enlace de OK.ru no contiene un identificador de video");
@@ -421,7 +426,7 @@ async function resolveOkru(embedUrl) {
   };
   const directVideo = (v) => typeof v.url === "string" && /^https:\/\//i.test(v.url) && /\.(?:mp4|webm)(?:[?#]|$)/i.test(v.url);
   videos.sort((a, b) => rank(a) - rank(b));
-  const headers = { Referer: OK + "/", Origin: OK };
+  const headers = { Referer: OK + "/", Origin: OK, "User-Agent": BROWSER_UA };
   const videoAlternatives = (selectedUrl) => videos.filter((v) => directVideo(v) && v.url !== selectedUrl)
     .slice(0, 7).map((v) => ({
       url: v.url,
@@ -440,13 +445,13 @@ async function resolveOkru(embedUrl) {
     };
     result.alternatives = videoAlternatives(direct.url);
     if (typeof hls === "string" && /^https:\/\//i.test(hls) && hls !== direct.url) {
-      result.alternatives.push({ url: hls, mime: "application/vnd.apple.mpegurl", headers, label: "OK.ru · HLS" });
+      result.alternatives.push({ url: hls, mime: hlsOrDashMime(hls), headers, label: "OK.ru · " + (/\.mpd(?:[?#]|$)/i.test(hls) ? "DASH" : "HLS") });
     }
     if (!result.alternatives.length) delete result.alternatives;
     return result;
   }
   if (typeof hls === "string" && /^https:\/\//i.test(hls)) {
-    const result = { url: hls, mime: "application/vnd.apple.mpegurl", headers, label: "OK.ru · HLS" };
+    const result = { url: hls, mime: hlsOrDashMime(hls), headers, label: "OK.ru · " + (/\.mpd(?:[?#]|$)/i.test(hls) ? "DASH" : "HLS") };
     result.alternatives = videoAlternatives(hls);
     if (!result.alternatives.length) delete result.alternatives;
     return result;
@@ -467,6 +472,31 @@ function normalizeSearch(value) {
     .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+const INDEX_KEY = "series-index:v1";
+const INDEX_TTL_MS = 12 * 60 * 60 * 1000;
+const INDEX_MAX_PAGES = 30;
+const SEARCH_BUDGET_MS = 9000;
+
+function readIndex() {
+  try {
+    const raw = kino.storage.get(INDEX_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data && Array.isArray(data.items) && typeof data.next === "number") return data;
+  } catch {}
+  return null;
+}
+
+function writeIndex(data) {
+  try {
+    let raw = JSON.stringify(data);
+    if (raw.length > 200000) {
+      raw = JSON.stringify({ ...data, items: data.items.map((x) => ({ ...x, poster: undefined, backdrop: undefined })) });
+    }
+    if (raw.length <= 240000) kino.storage.set(INDEX_KEY, raw, { ttlMs: INDEX_TTL_MS });
+  } catch {}
+}
+
 export async function search(query) {
   await null;
   const term = String((typeof query === "string" ? query : query && (query.q || query.originalTitle || query.title)) || "").trim();
@@ -477,28 +507,50 @@ export async function search(query) {
     const haystack = normalizeSearch(item.title + " " + item.id + " " + item.ref);
     return haystack.includes(wanted) || (words.length > 1 && words.every((word) => haystack.includes(word)));
   };
+  const score = (item) => {
+    const title = normalizeSearch(item.title);
+    if (title === wanted) return 0;
+    if (title.startsWith(wanted)) return 1;
+    return title.includes(wanted) ? 2 : 3;
+  };
+  const pick = (items) => unique(items.filter(matches))
+    .sort((a, b) => score(a) - score(b)).slice(0, MAX_PAGE);
 
-  // Consultamos de a una página para no disparar cuatro solicitudes simultáneas al sitio.
-  // Algunos servidores responden 502 cuando reciben varias peticiones seguidas desde el mismo cliente.
-  // En cuanto encontramos coincidencias, devolvemos resultados sin pedir páginas innecesarias.
-  const urls = [
-    SERIES,
-    SERIES + "?page=2",
-    SERIES + "?page=3",
-    BASE + "/"
-  ];
-  const collected = [];
-  for (const url of urls) {
-    try {
-      const items = parseSeries(await getText(url));
-      collected.push(...items);
-      const found = unique(collected.filter(matches)).slice(0, MAX_PAGE);
-      if (found.length) return found;
-    } catch (e) {
-      log("No se pudo consultar una página de búsqueda", e.message);
-    }
+  // Índice persistente de todo el catálogo (/series?sort=az&page=N, 25 por página).
+  // Se arma de a una página (el sitio responde 502 si se le piden varias a la vez) y
+  // se guarda en kino.storage, así la búsqueda cubre todo el catálogo y no solo 3 páginas.
+  let index = readIndex() || { items: [], next: 1, done: false };
+  const found = pick(index.items);
+  if (index.done || found.length) {
+    if (found.length || index.done) return found;
   }
-  return [];
+  const started = Date.now();
+  while (!index.done && index.next <= INDEX_MAX_PAGES && Date.now() - started < SEARCH_BUDGET_MS) {
+    let items = [];
+    try {
+      const url = SERIES + "?sort=az" + (index.next > 1 ? "&page=" + index.next : "");
+      items = parseSeries(await getText(url));
+    } catch (e) {
+      log("No se pudo indexar una página del catálogo", e.message);
+      break;
+    }
+    const known = new Set(index.items.map((x) => x.ref));
+    const fresh = items.filter((x) => x && x.ref && !known.has(x.ref));
+    if (!fresh.length) { index.done = true; break; }
+    index.items.push(...fresh);
+    index.next += 1;
+    if (items.length < 20) index.done = true;
+    writeIndex(index);
+    const hit = pick(index.items);
+    if (hit.length && !index.done) return hit;
+  }
+  writeIndex(index);
+  let result = pick(index.items);
+  if (!result.length) {
+    // Respaldo: el inicio trae series nuevas que todavía pueden no estar en el índice.
+    try { result = pick(parseSeries(await getText(BASE + "/"))); } catch {}
+  }
+  return result;
 }
 
 function sectionSlice(html, headingPattern, maxChars) {
@@ -731,19 +783,16 @@ function mapToCatalog(parsed, catalog) {
 }
 
 export async function home() {
-  let homeHtml = "";
-  let catalogHtml = "";
-  let moviesHtml = "";
-  try { homeHtml = await getText(BASE + "/", { fast: true }); }
-  catch (e) { log("No se pudo cargar el Inicio del sitio", e.message); }
-  try { catalogHtml = await getText(SERIES + "?sort=az", { fast: true }); }
-  catch (e) { log("No se pudo cargar el catálogo para Inicio", e.message); }
-  try { moviesHtml = await getText(BASE + "/peliculas", { fast: true }); }
-  catch (e) {
-    log("No se pudo cargar el catálogo directo de películas", e.message);
-    try { moviesHtml = await getText(BASE + "/genres/Acción", { fast: true }); }
-    catch (fallbackError) { log("No se pudo cargar el respaldo de películas", fallbackError.message); }
-  }
+  // Las tres páginas son independientes: se piden en paralelo para que Inicio cargue más rápido.
+  const [homeHtml, catalogHtml, moviesHtml] = await Promise.all([
+    getText(BASE + "/", { fast: true }).catch((e) => { log("No se pudo cargar el Inicio del sitio", e.message); return ""; }),
+    getText(SERIES + "?sort=az", { fast: true }).catch((e) => { log("No se pudo cargar el catálogo para Inicio", e.message); return ""; }),
+    getText(BASE + "/peliculas", { fast: true }).catch(async (e) => {
+      log("No se pudo cargar el catálogo directo de películas", e.message);
+      try { return await getText(BASE + "/genres/Acción", { fast: true }); }
+      catch (fallbackError) { log("No se pudo cargar el respaldo de películas", fallbackError.message); return ""; }
+    })
+  ]);
 
   const catalog = unique(parseSeries(catalogHtml));
   const latestSection = sectionSlice(homeHtml, "últimos? episodios", 60000);
@@ -766,6 +815,21 @@ export async function home() {
   ].filter((row) => row.items.length > 0);
 }
 
+// Evita repetir las tres peticiones de home() cada vez que se cambia de pestaña en la sección.
+async function cachedHome() {
+  const key = "home-rows:v1";
+  try {
+    const raw = kino.storage.get(key);
+    if (raw) { const rows = JSON.parse(raw); if (Array.isArray(rows) && rows.length) return rows; }
+  } catch {}
+  const rows = await home();
+  try {
+    const raw = JSON.stringify(rows);
+    if (rows.length && raw.length < 200000) kino.storage.set(key, raw, { ttlMs: 10 * 60 * 1000 });
+  } catch {}
+  return rows;
+}
+
 // Sección propia de Kino: aparece como una entrada separada en Inicio
 // (chip en celular y entrada lateral en TV), en vez de depender de la categoría global Anime.
 export async function section({ tab }) {
@@ -778,7 +842,7 @@ export async function section({ tab }) {
     { id: "catalogo-az", label: "Catálogo completo de A-Z" }
   ];
   const chosen = tabs.some((entry) => entry.id === tab) ? tab : "inicio";
-  const rows = await home();
+  const rows = await cachedHome();
   const selectedRows = chosen === "inicio"
     ? rows
     : rows.filter((row) => row.id === chosen);
@@ -1490,7 +1554,7 @@ async function resolveOdysee(providerUrl) {
     "Origin": "https://odysee.com", "Referer": "https://odysee.com/",
     "Accept": "application/json", "Content-Type": "application/json"
   };
-  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const pause = (ms) => kino.sleep(Math.min(Math.max(0, ms), 5000));
   const queryParam = (key) => { try { return parsed.searchParams.get(key); } catch { return null; } };
   let uri = null;
   try {
@@ -1618,7 +1682,7 @@ async function resolveProviderUrl(providerUrl, referer, allowCapture) {
   }
   const direct = directStream(providerUrl);
   if (direct) return direct;
-  if (/(?:ok\.ru\/(?:video|videoembed)|(?:doodstream\.com|dood\.to|dood\.so|dood\.watch|dood\.la|dood\.re|dood\.pm|dood\.wf|dood\.yt|doodstream\.co)\/)/i.test(providerUrl)) {
+  if (/ok\.ru\/(?:video|videoembed)/i.test(providerUrl)) {
     try { return await resolveOkru(providerUrl); }
     catch (error) { log("No se pudo resolver OK.ru", error && error.message || String(error)); }
   }
@@ -2449,7 +2513,7 @@ async function resolveNativePlayerSources(html, pageUrl) {
   return null;
 }
 
-export async function resolve(ref) {
+async function resolveInner(ref) {
   const path = String(ref || "");
   // Las referencias de servidores son URLs absolutas y deben tratarse antes de
   // normalizar las referencias de episodios, para no convertirlas en rutas locales.
@@ -2562,4 +2626,33 @@ export async function resolve(ref) {
   if (captured) return addSourceAlternatives(captured, candidates, "");
   if (!candidates.length && !embed) throw kino.error("unavailable", "La página no mostró fuentes públicas de reproducción reconocibles");
   throw kino.error("unavailable", "Los proveedores encontrados no expusieron una fuente compatible con Kino");
+}
+// Si la URL firmada trae su propio vencimiento (expires/exp/e en segundos epoch), se lo avisamos a Kino
+// para que renueve la fuente en vez de fallar a mitad del episodio.
+function expiryFromUrl(url) {
+  try {
+    const u = new URL(String(url));
+    for (const key of ["expires", "expiry", "exp", "e", "Expires"]) {
+      const raw = u.searchParams.get(key);
+      if (raw && /^\d{10}$/.test(raw)) {
+        const left = Number(raw) - Math.floor(Date.now() / 1000);
+        if (left > 30) return Math.min(left, 86400);
+      }
+    }
+  } catch {}
+  return 0;
+}
+
+function withExpiry(stream) {
+  if (!stream || typeof stream !== "object") return stream;
+  if (stream.expiresInSeconds == null) {
+    const left = expiryFromUrl(stream.url);
+    if (left) stream.expiresInSeconds = left;
+  }
+  if (Array.isArray(stream.alternatives)) stream.alternatives.forEach(withExpiry);
+  return stream;
+}
+
+export async function resolve(ref) {
+  return withExpiry(await resolveInner(ref));
 }
