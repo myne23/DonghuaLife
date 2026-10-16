@@ -1261,28 +1261,35 @@ export async function episodes(ref) {
   if ((seasonCount > 1 || list.filter((episode) => !episode.specialMovie).length <= 1) && firstEpisode) {
     for (let number = 1; number <= seasonCount; number++) {
       const existing = seasonItems(list, number);
-      // Una sola referencia puede ser un enlace destacado de temporada, no la lista completa.
-      if (existing.length > 1) continue;
-      // Usar una referencia de la propia temporada si existe: las temporadas pueden
-      // cambiar de slug/ID y no compartir la base de URL de la primera temporada.
+      // Nuevo enfoque para fichas con rutas UUID: si la lista pública empieza en
+      // el capítulo 2 o posterior, no asumir que la temporada está completa.
+      // Consultar siempre la ruta canónica TnE1 y reconstruir desde esa página.
+      // Esto no afecta las rutas antiguas de Supreme God Emperor ni Against the Sky Supreme.
+      const modernUuidRoute = /^\\/watch\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-temporada-\\d{1,3}-\\d{1,4}\\/?$/i;
+      const listedModernUuid = existing.find((episode) => modernUuidRoute.test(String(episode.ref || "")));
+      const discoveredAnchor = findSeasonAnchor(html, detailUrl, number);
+      const modernUuidAnchor = listedModernUuid ||
+        (discoveredAnchor && modernUuidRoute.test(String(discoveredAnchor.ref || "")) ? discoveredAnchor : null);
+      const missingFirstModernUuid = Boolean(modernUuidAnchor &&
+        !existing.some((episode) => episode.number === 1));
+      // Una temporada solo se puede omitir si ya tiene su capítulo 1 y varios
+      // capítulos públicos. Si falta el primero, hay que reconstruirla aunque
+      // los capítulos 2 y 3 ya se hayan parseado.
+      if (existing.length > 1 && !missingFirstModernUuid) continue;
+      // Algunas fichas antiguas usan rutas compartidas /watch/<slug>-<temporada>-<episodio>.
       const legacySeriesSlug = slugFromUrl(detailUrl);
       const firstEpisodePath = String(firstEpisode?.ref || "");
-      // Algunas fichas antiguas (p. ej. Spare Me, Great Lord!) usan rutas
-      // compartidas /watch/<slug>-<temporada>-<episodio>. Si faltan los enlaces
-      // de T2 en la ficha, esa ruta permite reconstruirla sin inventar otra serie.
-      // No aplicar el fallback a rutas UUID /-temporada-, que pueden crear
-      // temporadas/bloques incorrectos en fichas como Supreme God Emperor.
       const canReuseLegacyAnchor = Boolean(firstEpisode && legacySeriesSlug &&
         firstEpisode.season !== number &&
         new RegExp("^/watch/" + legacySeriesSlug + "-\\d+-\\d+/?$").test(firstEpisodePath));
-      const seasonAnchor = existing[0] || findSeasonAnchor(html, detailUrl, number) ||
+      const seasonAnchor = existing[0] || discoveredAnchor ||
         (firstEpisode && firstEpisode.season === number ? firstEpisode : null) ||
         (canReuseLegacyAnchor ? firstEpisode : null);
-      // No inventar temporadas con una ruta moderna de otra temporada.
       if (!seasonAnchor) continue;
-      // Si el único enlace de la temporada es VIP, comenzar por el capítulo 1
-      // en vez de abrir el capítulo VIP como si fuera la lista completa.
-      const anchorEpisodeNumber = seasonAnchor.vipFallback ? 1 : Math.max(1, Number(seasonAnchor.number) || 1);
+      // Para rutas UUID incompletas, la fuente de verdad es la página del capítulo 1,
+      // no el primer enlace visible (que puede ser el capítulo 4 VIP).
+      const anchorEpisodeNumber = missingFirstModernUuid || seasonAnchor.vipFallback
+        ? 1 : Math.max(1, Number(seasonAnchor.number) || 1);
       const route = episodeRouteForSeason(seasonAnchor.ref, number, anchorEpisodeNumber);
       if (!route) continue;
       try {
