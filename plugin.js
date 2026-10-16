@@ -329,7 +329,8 @@ function parseEpisodes(html, pageUrl) {
     ].some((value) => /\bVIP\b/i.test(value));
     const vipBadgePattern = /(?:\bdata-vip(?:\s*=\s*(?:["'](?:true|1|vip)["']|true|1))?|\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em|b)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em|b)>|>\s*VIP\s*<)/i;
     if (episodeLabelHasVip || episodeImageHasVip || vipAttributes ||
-        vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink)) {
+        vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink) ||
+        /\bVIP\b/i.test(textOf(afterLink))) {
       seen.add(path);
       continue;
     }
@@ -600,7 +601,8 @@ function parseLatestSeries(html) {
     ].some((value) => /\bVIP\b/i.test(value));
     const vipBadgePattern = /(?:\bdata-vip(?:\s*=\s*(?:["'](?:true|1|vip)["']|true|1))?|\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em|b)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em|b)>|>\s*VIP\s*<)/i;
     if (episodeLabelHasVip || episodeImageHasVip || vipAttributes ||
-        vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink)) {
+        vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink) ||
+        /\bVIP\b/i.test(textOf(afterLink))) {
       continue;
     }
     // La web pasó a identificadores opacos con el sufijo -temporada-1-5.
@@ -1096,14 +1098,19 @@ function seasonItems(list, season) {
 export async function episodes(ref) {
   const specialPrefix = "special-peli:";
   const seasonPrefix = "season:";
+  const blockPrefix = "block:";
   const requestedRef = String(ref || "");
   const specialMode = requestedRef.startsWith(specialPrefix);
-  const seasonMatch = !specialMode && requestedRef.startsWith(seasonPrefix)
+  const blockMatch = !specialMode && requestedRef.startsWith(blockPrefix)
+    ? /^block:(.+):(\d{1,3}):(\d{1,5})$/.exec(requestedRef)
+    : null;
+  const seasonMatch = !specialMode && !blockMatch && requestedRef.startsWith(seasonPrefix)
     ? /^season:(.+):(\d{1,3})$/.exec(requestedRef)
     : null;
-  const selectedSeason = seasonMatch ? Number(seasonMatch[2]) : 0;
+  const selectedBlockStart = blockMatch ? Number(blockMatch[3]) : 0;
+  const selectedSeason = blockMatch ? Number(blockMatch[2]) : seasonMatch ? Number(seasonMatch[2]) : 0;
   const baseRef = specialMode ? requestedRef.slice(specialPrefix.length)
-    : seasonMatch ? seasonMatch[1] : ref;
+    : blockMatch ? blockMatch[1] : seasonMatch ? seasonMatch[1] : ref;
   const url = seriesUrl(baseRef);
   if (!url) throw kino.error("not_found", "No se encontró la serie");
   let html;
@@ -1238,15 +1245,42 @@ export async function episodes(ref) {
   const seasonNumbers = Array.from(new Set(regularEpisodes.map((episode) => episode.season)))
     .filter((number) => number >= 1 && number <= 50)
     .sort((a, b) => a - b);
-  const seasons = seasonNumbers.map((number) => ({
-    id: slug + "-season-" + number,
-    ref: "season:" + slug + ":" + number,
-    title: "Temporada " + number,
-    number,
-    current: selectedSeason ? number === selectedSeason : number === (seasonNumbers[0] || 1)
-  }));
+  const needsEpisodeBlocks = seasonNumbers.some((number) =>
+    regularEpisodes.filter((episode) => episode.season === number).length > 50
+  );
+  const blockSize = Math.ceil(regularEpisodes.length / 50) > 50 ? 100 : 50;
+  let seasons;
+  if (needsEpisodeBlocks || blockMatch) {
+    // Kino no ofrece paginación dentro del selector de episodios, pero sí permite
+    // hasta 50 opciones. Las usamos como bloques para series largas sin alterar
+    // las referencias originales de reproducción ni mezclar temporadas reales.
+    seasons = [];
+    for (const number of seasonNumbers) {
+      const seasonEpisodes = regularEpisodes.filter((episode) => episode.season === number);
+      const maxNumber = seasonEpisodes.reduce((max, episode) => Math.max(max, episode.number), 0);
+      for (let start = 1; start <= maxNumber; start += blockSize) {
+        const end = Math.min(start + blockSize - 1, maxNumber);
+        seasons.push({
+          id: slug + "-s" + number + "-block-" + start,
+          ref: "block:" + slug + ":" + number + ":" + start,
+          title: "T" + number + " · Capítulos " + start + "–" + end,
+          number: Math.min(999, number),
+          current: selectedSeason ? number === selectedSeason && (selectedBlockStart || 1) === start
+            : number === (seasonNumbers[0] || 1) && start === 1
+        });
+      }
+    }
+  } else {
+    seasons = seasonNumbers.map((number) => ({
+      id: slug + "-season-" + number,
+      ref: "season:" + slug + ":" + number,
+      title: "Temporada " + number,
+      number,
+      current: selectedSeason ? number === selectedSeason : number === (seasonNumbers[0] || 1)
+    }));
+  }
 
-  if (specialMovies.length && regularEpisodes.length) {
+  if (specialMovies.length && regularEpisodes.length && !needsEpisodeBlocks && !blockMatch) {
     // Conservar el especial como una opción separada y mantener las temporadas normales.
     const seasonRef = specialPrefix + slug;
     const specialSeasonNumber = (seasonNumbers[seasonNumbers.length - 1] || 0) + 1;
@@ -1266,12 +1300,17 @@ export async function episodes(ref) {
     info.poster = selectedSeasonPoster;
     info.backdrop = selectedSeasonPoster;
   }
-  const selectedEpisodes = regularEpisodes.filter((episode) => episode.season === effectiveSeason);
+  const activeBlockStart = selectedBlockStart || 1;
+  const selectedEpisodes = regularEpisodes.filter((episode) =>
+    episode.season === effectiveSeason &&
+    (!(needsEpisodeBlocks || blockMatch) ||
+      (episode.number >= activeBlockStart && episode.number < activeBlockStart + blockSize))
+  );
   if (selectedSeason && !selectedEpisodes.length) {
     throw kino.error("not_found", "No se encontraron episodios para la temporada " + selectedSeason);
   }
 
-  if (seasonNumbers.length > 1 || selectedSeason) {
+  if (seasonNumbers.length > 1 || selectedSeason || needsEpisodeBlocks || blockMatch) {
     return {
       series: info,
       episodes: selectedEpisodes,
