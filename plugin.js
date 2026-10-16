@@ -298,9 +298,13 @@ function parseEpisodes(html, pageUrl) {
   while ((match = re.exec(html)) && out.length < 2000) {
     const previousEpisodeEnd = previousWatchEnd;
     previousWatchEnd = re.lastIndex;
-    // Examinar solo el espacio entre enlaces de capítulo, incluidas insignias anteriores.
     const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 1400), match.index);
-    const beforeLink = precedingMarkup;
+    // Recortar el contenido de la tarjeta anterior para que su distintivo no se herede.
+    const blockClosers = /<\\/(?:div|li|article|section|ul|ol)\\s*>/gi;
+    let blockCloser;
+    let lastBlockEnd = -1;
+    while ((blockCloser = blockClosers.exec(precedingMarkup))) lastBlockEnd = blockClosers.lastIndex;
+    const beforeLink = precedingMarkup.slice(lastBlockEnd >= 0 ? lastBlockEnd : 0);
     const url = absolute(match[2], pageUrl);
     let path;
     try { path = new URL(url).pathname; } catch { continue; }
@@ -584,6 +588,11 @@ function parseLatestSeries(html) {
     const imageLabelForVip = innerImageForVip
       ? (attr(innerImageForVip[0], "alt") || attr(innerImageForVip[0], "title")) : "";
     const precedingMarkup = html.slice(Math.max(previousEpisodeEnd, match.index - 1400), match.index);
+    const blockClosers = /<\\/(?:div|li|article|section|ul|ol)\\s*>/gi;
+    let blockCloser;
+    let lastBlockEnd = -1;
+    while ((blockCloser = blockClosers.exec(precedingMarkup))) lastBlockEnd = blockClosers.lastIndex;
+    const beforeLink = precedingMarkup.slice(lastBlockEnd >= 0 ? lastBlockEnd : 0);
     const tail = html.slice(re.lastIndex, Math.min(html.length, re.lastIndex + 1800));
     const nextEpisodeLink = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/watch\/[^"']+\1/i.exec(tail);
     const afterLink = tail.slice(0, nextEpisodeLink ? nextEpisodeLink.index : tail.length);
@@ -596,7 +605,7 @@ function parseLatestSeries(html) {
     ].some((value) => /\bVIP\b/i.test(value));
     const vipBadgePattern = /(?:\b(?:class|id|aria-label|title|data-[\w-]+)\s*=\s*["'][^"']*\bVIP\b[^"']*["']|<(?:span|div|i|strong|em|b)\b[^>]*>\s*VIP\s*<\/(?:span|div|i|strong|em|b)>)/i;
     if (episodeLabelHasVip || episodeImageHasVip || vipAttributes ||
-        vipBadgePattern.test(afterLink) || vipBadgePattern.test(precedingMarkup)) {
+        vipBadgePattern.test(afterLink) || vipBadgePattern.test(beforeLink)) {
       continue;
     }
     // La web pasó a identificadores opacos con el sufijo -temporada-1-5.
