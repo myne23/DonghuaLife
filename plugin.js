@@ -1313,7 +1313,7 @@ export async function episodes(ref) {
     }));
   }
 
-  if (specialMovies.length && regularEpisodes.length && !needsEpisodeBlocks && !blockMatch) {
+  if (specialMovies.length && regularEpisodes.length) {
     // Conservar el especial como una opción separada y mantener las temporadas normales.
     const seasonRef = specialPrefix + slug;
     const specialSeasonNumber = (seasonNumbers[seasonNumbers.length - 1] || 0) + 1;
