@@ -335,7 +335,7 @@ function parseEpisodes(html, pageUrl) {
     const afterLink = tail.slice(0, nextEpisodeLink ? nextEpisodeLink.index : tail.length);
     previousWatchEnd = re.lastIndex;
     // No detectar la palabra VIP en un título de serie como «VIP Show».
-    const episodeLabelHasVip = /(?:^|\b)(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(linkLabel);
+    const episodeLabelHasVip = /\bVIP\b/i.test(linkLabel);
     const episodeImageHasVip = /^(?:ep(?:isode)?|cap[ií]tulo|episodio)\s*\d+[^<]{0,24}VIP\b/i.test(imageLabelForVip.trim());
     const vipAttributes = [
       attr(match[0], "class"), attr(match[0], "id"),
@@ -1118,6 +1118,15 @@ function findSeasonAnchor(html, pageUrl, wantedSeason) {
   let match;
   while ((match = re.exec(String(html || "")))) {
     const url = absolute(match[2], pageUrl);
+    // No usar un episodio VIP como ancla de reconstrucción: si la ficha empieza
+    // con el 10 VIP, la recuperación volvería a crear una temporada desde el 1.
+    const anchorLabel = textOf(match[3]);
+    const anchorAttributes = [
+      attr(match[0], "class"), attr(match[0], "id"),
+      attr(match[0], "aria-label"), attr(match[0], "title"),
+      attr(match[0], "data-label"), attr(match[0], "data-title")
+    ].join(" ");
+    if (/\bVIP\b/i.test(anchorLabel) || /\bVIP\b/i.test(anchorAttributes)) continue;
     let path = "";
     try { path = new URL(url).pathname; } catch { continue; }
     const modern = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
