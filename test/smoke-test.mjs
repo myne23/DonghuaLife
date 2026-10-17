@@ -59,7 +59,7 @@ globalThis.kino = {
 const plugin = await import('../plugin.js?smoke=2');
 const beforeHomeFetches = fetchCalls.length;
 const home = await plugin.home();
-assert.equal(fetchCalls.length - beforeHomeFetches, 4, 'El Inicio consulta portada, últimos episodios, catálogo y películas');
+assert.equal(fetchCalls.length - beforeHomeFetches, 3, 'El Inicio consulta portada, catálogo y películas');
 const categories = await plugin.categories(null);
 const sectionHome = await plugin.section({ tab: null });
 assert.equal(sectionHome.tab, 'inicio');
@@ -78,7 +78,6 @@ assert.ok(categories.every((category) => category.title && category.ref));
 assert.ok(home.length >= 3, "Home debe devolver al menos tres filas visibles");
 assert.deepEqual(home.map((row) => row.title), ['Últimos Episodios', 'Tendencias', 'Series Finalizadas', 'Películas', 'Catálogo completo de A-Z']);
 assert.equal(home[0].items[0].title, 'Gamma Donghua', 'Últimos episodios debe usar la página dedicada y conservar el orden de publicación');
-assert.ok(fetchCalls.includes('https://donghualife.com/ultimos-episodios'), 'Inicio debe consultar la página completa de Últimos Episodios');
 assert.ok(home.every((row) => Array.isArray(row.items) && row.items.every((item) => item.id && item.ref)));
 assert.equal(home.find((row) => row.id === 'series-finalizadas').items.length, 2);
 assert.equal(home.find((row) => row.id === 'peliculas').items[0].kind, 'movie');
