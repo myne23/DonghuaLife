@@ -631,6 +631,7 @@ function parseLatestSeries(html) {
     // La web pasó a identificadores opacos con el sufijo -temporada-1-5.
     // Conservamos compatibilidad con el formato anterior titulo-1-5.
     const routeMatch = /\/watch\/(.+?)-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
+      /\/watch\/(.+?)-t(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
       /\/watch\/(.+?)-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
     if (!routeMatch) continue;
 
