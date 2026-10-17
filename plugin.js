@@ -831,9 +831,12 @@ function mapToCatalog(parsed, catalog) {
 }
 
 export async function home() {
-  // Las tres páginas son independientes: se piden en paralelo para que Inicio cargue más rápido.
-  const [homeHtml, catalogHtml, moviesHtml] = await Promise.all([
+  // Últimos Episodios tiene una página propia con más resultados que la fila
+  // abreviada de la portada. Consultarla directamente evita que Inicio se quede
+  // limitado a los pocos estrenos destacados que muestra el home del sitio.
+  const [homeHtml, latestHtml, catalogHtml, moviesHtml] = await Promise.all([
     getText(BASE + "/", { fast: true }).catch((e) => { log("No se pudo cargar el Inicio del sitio", e.message); return ""; }),
+    getText(BASE + "/ultimos-episodios", { fast: true }).catch((e) => { log("No se pudo cargar Últimos Episodios; se usará la portada", e.message); return ""; }),
     getText(SERIES + "?sort=az", { fast: true }).catch((e) => { log("No se pudo cargar el catálogo para Inicio", e.message); return ""; }),
     getText(BASE + "/peliculas", { fast: true }).catch(async (e) => {
       log("No se pudo cargar el catálogo directo de películas", e.message);
@@ -844,8 +847,12 @@ export async function home() {
 
   const catalog = unique(parseSeries(catalogHtml));
   const latestSection = sectionSlice(homeHtml, "últimos? episodios", 60000);
+  const latestSource = latestHtml || latestSection;
   const trendsSection = sectionSlice(homeHtml, "tendencias", 45000);
-  let latest = mapToCatalog(unique(parseLatestSeries(latestSection)), catalog).slice(0, MAX_HOME);
+  let latest = mapToCatalog(unique(parseLatestSeries(latestSource)), catalog).slice(0, MAX_HOME);
+  if (!latest.length) {
+    latest = mapToCatalog(unique(parseLatestSeries(latestSection)), catalog).slice(0, MAX_HOME);
+  }
   if (!latest.length) latest = mapToCatalog(unique(parseSeries(latestSection)), catalog).slice(0, MAX_HOME);
   const trends = mapToCatalog(unique(parseSeries(trendsSection)), catalog).slice(0, MAX_HOME);
   const finished = parseFinishedSeries(catalogHtml).slice(0, MAX_HOME);
