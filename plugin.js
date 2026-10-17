@@ -1331,16 +1331,28 @@ export async function episodes(ref) {
             }
           };
           await probeEpisode(anchorNumber);
-          let misses = 0;
-          for (let episodeNumber = anchorNumber - 1; episodeNumber >= 1; episodeNumber--) {
-            if (await probeEpisode(episodeNumber)) misses = 0;
-            else if (++misses >= 5) break;
-          }
-          misses = 0;
-          for (let episodeNumber = anchorNumber + 1; episodeNumber <= 100; episodeNumber++) {
-            if (await probeEpisode(episodeNumber)) misses = 0;
-            else if (++misses >= 5) break;
-          }
+
+          // Las sondas secuenciales podían tardar decenas de segundos en fichas que
+          // solo enlazan un episodio. Consultar pequeños lotes en paralelo reduce la
+          // espera sin saturar el sitio ni cambiar el criterio de cinco fallos seguidos.
+          const probeRange = async (start, end, step) => {
+            let misses = 0;
+            for (let base = start; step < 0 ? base >= end : base <= end; base += step * 4) {
+              const batch = [];
+              for (let offset = 0; offset < 4; offset++) {
+                const episodeNumber = base + step * offset;
+                if (step < 0 ? episodeNumber < end : episodeNumber > end) break;
+                batch.push(episodeNumber);
+              }
+              const results = await Promise.all(batch.map((episodeNumber) => probeEpisode(episodeNumber)));
+              for (const found of results) {
+                if (found) misses = 0;
+                else if (++misses >= 5) return;
+              }
+            }
+          };
+          if (anchorNumber > 1) await probeRange(anchorNumber - 1, 1, -1);
+          if (anchorNumber < 100) await probeRange(anchorNumber + 1, 100, 1);
           if (recovered.size > seasonList.length) {
             seasonList = Array.from(recovered.values()).sort((a, b) => a.number - b.number);
           }
