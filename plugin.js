@@ -863,12 +863,45 @@ export async function home() {
   ].filter((row) => row.items.length > 0);
 }
 
-// Evita repetir las tres peticiones de home() cada vez que se cambia de pestaña en la sección.
+// Refresca solo la fila de Últimos Episodios con una frecuencia mayor que el resto.
+async function refreshLatestHomeRow(rows) {
+  const [latestHtml, catalogHtml] = await Promise.all([
+    getText(BASE + "/ultimos-episodios", { fast: true }),
+    getText(SERIES + "?sort=az", { fast: true })
+  ]);
+  const latest = mapToCatalog(unique(parseLatestSeries(latestHtml)), unique(parseSeries(catalogHtml)))
+    .slice(0, MAX_HOME);
+  if (!latest.length) throw new Error("La página de Últimos Episodios no devolvió títulos");
+  return rows.map((row) =>
+    row.id === "ultimos-episodios" ? { ...row, items: latest } : row
+  );
+}
+
+// El resto del Inicio conserva 10 minutos de caché; Últimos Episodios se renueva cada 2 minutos.
 async function cachedHome() {
   const key = "home-rows:v1";
+  const latestFreshKey = "latest-home-fresh:v1";
   try {
     const raw = kino.storage.get(key);
-    if (raw) { const rows = JSON.parse(raw); if (Array.isArray(rows) && rows.length) return rows; }
+    if (raw) {
+      const rows = JSON.parse(raw);
+      if (Array.isArray(rows) && rows.length) {
+        let latestFresh = null;
+        try { latestFresh = kino.storage.get(latestFreshKey); } catch {}
+        if (!latestFresh) {
+          try {
+            const refreshed = await refreshLatestHomeRow(rows);
+            const serialized = JSON.stringify(refreshed);
+            if (serialized.length < 200000) kino.storage.set(key, serialized, { ttlMs: 10 * 60 * 1000 });
+            kino.storage.set(latestFreshKey, "1", { ttlMs: 2 * 60 * 1000 });
+            return refreshed;
+          } catch (e) {
+            log("No se pudo actualizar Últimos Episodios; se conserva la caché anterior", e.message);
+          }
+        }
+        return rows;
+      }
+    }
   } catch {}
   const rows = await home();
   try {
