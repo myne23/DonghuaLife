@@ -360,6 +360,7 @@ function parseEpisodes(html, pageUrl) {
     // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
     const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
+      /-t(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
       /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
     if (!m) continue;
 
@@ -1112,6 +1113,8 @@ function episodeRouteForSeason(episodeRef, season, episode = 1) {
   const path = String(episodeRef || "");
   const modern = /^(.*\/watch\/.+?)-temporada-\d{1,3}-\d{1,4}\/?$/i.exec(path);
   if (modern) return modern[1] + "-temporada-" + season + "-" + episode;
+  const opaqueSeason = /^(.*\/watch\/.+?)-t\d{1,3}-\d{1,4}\/?$/i.exec(path);
+  if (opaqueSeason) return opaqueSeason[1] + "-t" + season + "-" + episode;
   const legacy = /^(.*\/watch\/.+?)-\d{1,3}-\d{1,4}\/?$/.exec(path);
   return legacy ? legacy[1] + "-" + season + "-" + episode : "";
 }
@@ -1149,8 +1152,9 @@ function findSeasonAnchor(html, pageUrl, wantedSeason) {
   for (const anchor of anchors) {
     const path = anchor.path;
     const modern = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
-    const legacy = !modern && /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
-    const route = modern || legacy;
+    const opaqueSeason = !modern && /-t(\d{1,3})-(\d{1,4})\/?$/i.exec(path);
+    const legacy = !modern && !opaqueSeason && /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
+    const route = modern || opaqueSeason || legacy;
     if (!route || Number(route[1]) !== wantedSeason) continue;
     // Un enlace genérico anterior (p. ej. «Ver último») no puede ocultar
     // que la misma ruta aparece marcada VIP en la lista de episodios.
@@ -1250,7 +1254,7 @@ export async function episodes(ref) {
   const listedMaxSeason = list.reduce((max, episode) =>
     episode.specialMovie ? max : Math.max(max, episode.season), 0);
   let linkedMaxSeason = 0;
-  const seasonRouteRe = /\/watch\/[^"'<>\s]*?(?:-temporada-|-)(\d{1,3})-\d{1,4}/gi;
+  const seasonRouteRe = /\/watch\/[^"'<>\s]*?(?:-temporada-|-t|-)(\d{1,3})-\d{1,4}/gi;
   let linkedSeasonMatch;
   while ((linkedSeasonMatch = seasonRouteRe.exec(String(html || "")))) {
     const candidateSeason = Number(linkedSeasonMatch[1]);
@@ -1266,7 +1270,7 @@ export async function episodes(ref) {
       // el capítulo 2 o posterior, no asumir que la temporada está completa.
       // Consultar siempre la ruta canónica TnE1 y reconstruir desde esa página.
       // Esto no afecta las rutas antiguas de Supreme God Emperor ni Against the Sky Supreme.
-      const modernUuidRoute = /^\/watch\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-temporada-\d{1,3}-\d{1,4}\/?$/i;
+      const modernUuidRoute = /^\/watch\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(?:temporada-|t)\d{1,3}-\d{1,4}\/?$/i;
       const listedModernUuid = existing.find((episode) => modernUuidRoute.test(String(episode.ref || "")));
       const discoveredAnchor = findSeasonAnchor(html, detailUrl, number);
       const modernUuidAnchor = listedModernUuid ||
