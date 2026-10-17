@@ -1275,12 +1275,15 @@ export async function episodes(ref) {
       const discoveredAnchor = findSeasonAnchor(html, detailUrl, number);
       const modernUuidAnchor = listedModernUuid ||
         (discoveredAnchor && modernUuidRoute.test(String(discoveredAnchor.ref || "")) ? discoveredAnchor : null);
-      const missingFirstModernUuid = Boolean(modernUuidAnchor &&
+      // No solo las rutas UUID pueden empezar en un episodio posterior: fichas
+      // antiguas como The Great Ruler enlazan T2E43 aunque T2E1 exista.
+      // Si hay un ancla para la temporada pero no vemos E1, consultar siempre TnE1.
+      const missingFirstEpisode = Boolean(discoveredAnchor &&
         !existing.some((episode) => episode.number === 1));
       // Una temporada solo se puede omitir si ya tiene su capítulo 1 y varios
       // capítulos públicos. Si falta el primero, hay que reconstruirla aunque
       // los capítulos 2 y 3 ya se hayan parseado.
-      if (existing.length > 1 && !missingFirstModernUuid) continue;
+      if (existing.length > 1 && !missingFirstEpisode) continue;
       // Algunas fichas antiguas usan rutas compartidas /watch/<slug>-<temporada>-<episodio>.
       const legacySeriesSlug = slugFromUrl(detailUrl);
       const firstEpisodePath = String(firstEpisode?.ref || "");
@@ -1293,7 +1296,7 @@ export async function episodes(ref) {
       if (!seasonAnchor) continue;
       // Para rutas UUID incompletas, la fuente de verdad es la página del capítulo 1,
       // no el primer enlace visible (que puede ser el capítulo 4 VIP).
-      const anchorEpisodeNumber = missingFirstModernUuid || seasonAnchor.vipFallback
+      const anchorEpisodeNumber = missingFirstEpisode || seasonAnchor.vipFallback
         ? 1 : Math.max(1, Number(seasonAnchor.number) || 1);
       const route = episodeRouteForSeason(seasonAnchor.ref, number, anchorEpisodeNumber);
       if (!route) continue;
@@ -1337,9 +1340,12 @@ export async function episodes(ref) {
           // espera sin saturar el sitio ni cambiar el criterio de cinco fallos seguidos.
           const probeRange = async (start, end, step) => {
             let misses = 0;
-            for (let base = start; step < 0 ? base >= end : base <= end; base += step * 4) {
+            // Lotes algo mayores reducen los viajes de red en fichas que solo
+            // enlazan un capítulo, manteniendo una concurrencia limitada.
+            const batchSize = 10;
+            for (let base = start; step < 0 ? base >= end : base <= end; base += step * batchSize) {
               const batch = [];
-              for (let offset = 0; offset < 4; offset++) {
+              for (let offset = 0; offset < batchSize; offset++) {
                 const episodeNumber = base + step * offset;
                 if (step < 0 ? episodeNumber < end : episodeNumber > end) break;
                 batch.push(episodeNumber);
