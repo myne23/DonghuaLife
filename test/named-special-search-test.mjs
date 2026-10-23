@@ -14,9 +14,12 @@ const tabHtml = '<html><h1>Eclipse of Illusion — Cap. 1</h1>' +
   '</html>';
 const immortalHtml = '<html><h1>El renegado inmortal</h1><p>2 temporadas</p>' +
   '<a href="/watch/immortal-renegade-1-1">Capítulo 1</a>' +
+  '<a href="/watch/immortal-renegade-1-2">Capítulo 2</a>' +
+  '<a href="/watch/immortal-renegade-1-3">Capítulo 3</a>' +
   '<a href="/watch/immortal-renegade-peli-151-152">Peli Ep 151-152</a></html>';
 const immortalEpisodeHtml = '<html><a href="?s=1">Temporada 1</a>' +
-  '<a href="?s=2">Peli Ep 151-152</a><a href="/watch/immortal-renegade-1-1">Capítulo 1</a></html>';
+  '<a href="?s=2">Peli Ep 151-152</a><a href="/watch/immortal-renegade-1-1">Capítulo 1</a>' +
+  '<a href="/watch/immortal-renegade-1-2">Capítulo 2</a><a href="/watch/immortal-renegade-1-3">Capítulo 3</a></html>;
 const specialHtml = '<html><h1>The Miasma War</h1><p>Continuation</p><a href="/watch/the-miasma-war-1-1">Capítulo 1</a></html>';
 const store = new Map();
 globalThis.kino = {
