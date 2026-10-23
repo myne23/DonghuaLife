@@ -43,7 +43,7 @@ const plugin = await import("../plugin.js?named-special-test=1");
 const result = await plugin.episodes("eclipse-illusion");
 const special = result.seasons.find((season) => /maiasma war|miasma war/i.test(season.title));
 assert.ok(special, "La pestaña con nombre propio debe aparecer en el selector");
-assert.equal(special.title, "The Maiasma War", "Debe conservar el título del selector sin inventar una temporada");
+assert.equal(special.title, "The Miasma War", "Debe conservar el título del selector sin inventar una temporada");
 const selected = await plugin.episodes(special.ref);
 assert.equal(selected.episodes.length, 6, "La pestaña alternativa debe cargar sus seis episodios");
 assert.ok(selected.episodes.every((episode) => episode.ref.includes("?s=2")), "Cada episodio debe conservar ?s=2 para la reproducción");
