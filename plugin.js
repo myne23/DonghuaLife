@@ -292,6 +292,24 @@ function parseEpisodes(html, pageUrl) {
   const specialLabelMatch = /(Peli(?:\s*Ep)?\s*\d+\s*-\s*\d+)/i.exec(decodedPage);
   const specialLabel = specialLabelMatch ? specialLabelMatch[1].replace(/\s+/g, " ").trim() : "";
   const specialRange = /Peli(?:\s*Ep)?\s*(\d+)\s*-\s*(\d+)/i.exec(specialLabel);
+  // Continuaciones publicadas como tarjeta «Especial» con nombre propio, no como temporada.
+  const namedSpecialTitle = (() => {
+    const cards = decodedPage.match(/<(?:div|li|article|section)\b[^>]*(?:class|id)\s*=\s*(["'][^"']*(?:season|special|card|item)[^"']*["'])[^>]*>[\s\S]*?<\/(?:div|li|article|section)>/gi) || [];
+    for (const card of cards) {
+      if (!/\bespecial\b/i.test(textOf(card))) continue;
+      const image = /<img\b[^>]*>/i.exec(card);
+      const heading = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i.exec(card);
+      const candidates = [
+        image ? attr(image[0], "alt") || attr(image[0], "title") : "",
+        heading ? textOf(heading[1]) : "",
+        attr(card, "aria-label"), attr(card, "title")
+      ].map((value) => String(value || "").trim())
+        .filter((value) => value && !/^(especial|temporada\s*\d+|19\d{2}|20\d{2})$/i.test(value));
+      const title = candidates.find((value) => !/\bespecial\b/i.test(value)) || candidates[0];
+      if (title) return title.replace(/\s+(?:19|20)\d{2}\s*$/, "").trim();
+    }
+    return "";
+  })();
   const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/watch\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   let previousWatchEnd = 0;
@@ -371,11 +389,13 @@ function parseEpisodes(html, pageUrl) {
     const explicitLabels = [linkLabel, imageLabel, attr(match[0], "aria-label"), attr(match[0], "title")];
     const explicitSpecial = explicitLabels.find((value) =>
       value && /^peli(?:\s*ep)?\s*\d+\s*-\s*\d+$/i.test(value.trim()));
-    // Si el enlace del capítulo está rotulado genéricamente, la tarjeta de temporada
-    // identifica el especial por el número final del rango (p. ej. Peli Ep 151- 152).
+    // El título del especial puede estar en la tarjeta contenedora y no en el enlace.
     const isSpecialSeason = Boolean(specialRange && season === Number(specialRange[2]) && season !== 1);
-    const specialMovie = Boolean(explicitSpecial || isSpecialSeason || /\/watch\/[^/]*peli[^/]*\d+-\d+/i.test(path));
-    let label = explicitSpecial || (specialMovie ? specialLabel : "") || linkLabel || imageLabel ||
+    const cardHasNamedSpecial = Boolean(namedSpecialTitle && /\bespecial\b/i.test(textOf(currentCardMarkup)));
+    const specialMovie = Boolean(explicitSpecial || isSpecialSeason || cardHasNamedSpecial ||
+      /\/watch\/[^/]*peli[^/]*\d+-\d+/i.test(path));
+    let label = explicitSpecial || (cardHasNamedSpecial ? namedSpecialTitle : "") ||
+      (specialMovie ? specialLabel : "") || linkLabel || imageLabel ||
       attr(match[0], "aria-label") || attr(match[0], "title") || "";
     if (specialMovie && !label) label = "Peli " + (specialRange ? specialRange[1] + "-" + specialRange[2] : season + "-" + number);
     label = specialMovie ? label.trim() : label.replace(/\b(?:fuentes?|subt[ií]tulos?|vip)\b/gi, " ").replace(/\s+/g, " ").trim();
@@ -569,6 +589,22 @@ export async function search(query) {
   if (!result.length) {
     // Respaldo: el inicio trae series nuevas que todavía pueden no estar en el índice.
     try { result = pick(parseSeries(await getText(BASE + "/"))); } catch {}
+  }
+  if (!result.length) {
+    // Una continuación puede tener ficha propia sin estar indexada en el catálogo A-Z.
+    // Probar el slug derivado del título permite buscar esas fichas directamente.
+    const directSlug = wanted.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 180);
+    if (directSlug) {
+      try {
+        const directUrl = seriesUrl(directSlug);
+        const directHtml = directUrl ? await getText(directUrl) : "";
+        const info = parseInfo(directHtml, directSlug);
+        if (new RegExp("<h1\\b", "i").test(directHtml)) {
+          result = [{ id: directSlug, ref: directSlug, title: info.title, kind: "series",
+            poster: info.poster, backdrop: info.backdrop, genres: ["anime"] }];
+        }
+      } catch {}
+    }
   }
   return result;
 }
