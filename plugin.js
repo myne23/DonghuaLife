@@ -246,6 +246,9 @@ function parseNamedSeasonTabs(html, pageUrl) {
     const query = "s=" + encodeURIComponent(seasonValue);
     if (seen.has(query + "|" + title)) continue;
     seen.add(query + "|" + title);
+    // Las películas/episodios dobles (p. ej. «Peli Ep 151-152») son especiales
+    // independientes, no pestañas de temporada con nombre.
+    if (/^peli(?:\s*ep)?\s*\d+\s*-\s*\d+$/i.test(title.trim())) continue;
     tabs.push({ title: title.trim().replace(/\bMaiasma\b/gi, "Miasma").slice(0, 180), query, season: Number(seasonValue) });
   }
   return tabs;
@@ -307,7 +310,7 @@ function parseSeasonPosters(html, pageUrl) {
   return posters;
 }
 
-function parseEpisodes(html, pageUrl) {
+function parseEpisodes(html, pageUrl, allowNamedTabRoutes = false) {
   const out = [];
   const seen = new Set();
   // El rótulo del especial suele estar en la tarjeta de temporada (img alt/title),
@@ -401,9 +404,15 @@ function parseEpisodes(html, pageUrl) {
     if (seen.has(path)) continue;
     // DonghuaLife usa tanto /watch/titulo-1-5 como el formato nuevo
     // /watch/<id>-temporada-1-5. Aceptamos ambos.
-    const m = /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
-      /-t(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
-      /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
+    // Las pestañas con nombre propio usan rutas como
+    // /watch/<uuid>-the-maiasma-war--1, --2, ...; el sufijo es el número
+    // de episodio, no una temporada numerada.
+    const namedRouteMatch = allowNamedTabRoutes ? /--(\d+)\/?$/.exec(path) : null;
+    const m = namedRouteMatch
+      ? [namedRouteMatch[0], "1", namedRouteMatch[1]]
+      : /-temporada-(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
+        /-t(\d{1,3})-(\d{1,4})\/?$/i.exec(path) ||
+        /-(\d{1,3})-(\d{1,4})\/?$/.exec(path);
     if (!m) continue;
 
     const season = Number(m[1]), number = Number(m[2]);
@@ -416,7 +425,7 @@ function parseEpisodes(html, pageUrl) {
     // El título del especial puede estar en la tarjeta contenedora y no en el enlace.
     const isSpecialSeason = Boolean(specialRange && season === Number(specialRange[2]) && season !== 1);
     const cardHasNamedSpecial = Boolean(namedSpecialTitle && /\bespecial\b/i.test(textOf(currentCardMarkup)));
-    const specialMovie = Boolean(explicitSpecial || isSpecialSeason || cardHasNamedSpecial ||
+    const specialMovie = !namedRouteMatch && Boolean(explicitSpecial || isSpecialSeason || cardHasNamedSpecial ||
       /\/watch\/[^/]*peli[^/]*\d+-\d+/i.test(path));
     let label = explicitSpecial || (cardHasNamedSpecial ? namedSpecialTitle : "") ||
       (specialMovie ? specialLabel : "") || linkLabel || imageLabel ||
@@ -433,7 +442,7 @@ function parseEpisodes(html, pageUrl) {
     let episodeRef = path;
     try {
       const selectedSeason = new URL(pageUrl).searchParams.get("s");
-      if (selectedSeason) episodeRef += "?s=" + encodeURIComponent(selectedSeason);
+      if (selectedSeason && !namedRouteMatch) episodeRef += "?s=" + encodeURIComponent(selectedSeason);
     } catch {}
     out.push({ season, number, ref: episodeRef, title: label.slice(0, 180), specialMovie });
     seen.add(path);
@@ -1353,7 +1362,7 @@ export async function episodes(ref) {
     const target = new URL(absolute(anchor.ref, detailUrl));
     target.searchParams.set("s", namedTabMatch[2]);
     const tabHtml = await getText(target.href);
-    const tabEpisodes = parseEpisodes(tabHtml, target.href)
+    const tabEpisodes = parseEpisodes(tabHtml, target.href, true)
       .filter((episode) => !episode.specialMovie)
       .sort((a, b) => a.number - b.number);
     if (!tabEpisodes.length) throw kino.error("not_found", "No se encontraron episodios para el especial seleccionado");
