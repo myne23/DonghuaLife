@@ -227,6 +227,30 @@ function parseInfo(html, slug) {
   return { title: title.slice(0, 200), poster: poster ? posterUrl(poster) : undefined, backdrop: poster ? posterUrl(poster) : undefined, overview, year: year ? year[0] : undefined };
 }
 
+function parseNamedSeasonTabs(html, pageUrl) {
+  const source = decodeHtml(String(html || ""));
+  const tabs = [];
+  const seen = new Set();
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = re.exec(source))) {
+    const href = absolute(match[2], pageUrl);
+    if (!href) continue;
+    let url;
+    try { url = new URL(href); } catch { continue; }
+    // Algunas continuaciones usan pestañas ?s=N dentro de la misma ficha.
+    const seasonValue = url.searchParams.get("s");
+    if (!seasonValue || !/^\d{1,3}$/.test(seasonValue) || Number(seasonValue) < 2) continue;
+    const title = textOf(match[3]) || attr(match[0], "aria-label") || attr(match[0], "title");
+    if (!title || /^(?:temporada\s*\d+|especial|\d{4}|episodios?)$/i.test(title.trim())) continue;
+    const query = "s=" + encodeURIComponent(seasonValue);
+    if (seen.has(query + "|" + title)) continue;
+    seen.add(query + "|" + title);
+    tabs.push({ title: title.trim().slice(0, 180), query, season: Number(seasonValue) });
+  }
+  return tabs;
+}
+
 function parseSeasonPosters(html, pageUrl) {
   const source = decodeHtml(String(html || ""));
   const posters = new Map();
@@ -406,7 +430,12 @@ function parseEpisodes(html, pageUrl) {
       // como «Temporada 1» o «siguiente». El número de la ruta es la fuente fiable.
       label = "Capítulo " + number;
     }
-    out.push({ season, number, ref: path, title: label.slice(0, 180), specialMovie });
+    let episodeRef = path;
+    try {
+      const selectedSeason = new URL(pageUrl).searchParams.get("s");
+      if (selectedSeason) episodeRef += "?s=" + encodeURIComponent(selectedSeason);
+    } catch {}
+    out.push({ season, number, ref: episodeRef, title: label.slice(0, 180), specialMovie });
     seen.add(path);
   }
   return out.sort((a, b) => a.season - b.season || a.number - b.number);
@@ -1247,19 +1276,24 @@ function findSeasonAnchor(html, pageUrl, wantedSeason) {
 
 export async function episodes(ref) {
   const specialPrefix = "special-peli:";
+  const namedTabPrefix = "season-tab:";
   const seasonPrefix = "season:";
   const blockPrefix = "block:";
   const requestedRef = String(ref || "");
   const specialMode = requestedRef.startsWith(specialPrefix);
-  const blockMatch = !specialMode && requestedRef.startsWith(blockPrefix)
+  const namedTabMatch = !specialMode && requestedRef.startsWith(namedTabPrefix)
+    ? /^season-tab:(.+):s=(\d{1,3})$/.exec(requestedRef)
+    : null;
+  const blockMatch = !specialMode && !namedTabMatch && requestedRef.startsWith(blockPrefix)
     ? /^block:(.+):(\d{1,3}):(\d{1,5})$/.exec(requestedRef)
     : null;
-  const seasonMatch = !specialMode && !blockMatch && requestedRef.startsWith(seasonPrefix)
+  const seasonMatch = !specialMode && !namedTabMatch && !blockMatch && requestedRef.startsWith(seasonPrefix)
     ? /^season:(.+):(\d{1,3})$/.exec(requestedRef)
     : null;
   const selectedBlockStart = blockMatch ? Number(blockMatch[3]) : 0;
   const selectedSeason = blockMatch ? Number(blockMatch[2]) : seasonMatch ? Number(seasonMatch[2]) : 0;
   const baseRef = specialMode ? requestedRef.slice(specialPrefix.length)
+    : namedTabMatch ? namedTabMatch[1]
     : blockMatch ? blockMatch[1] : seasonMatch ? seasonMatch[1] : ref;
   const url = seriesUrl(baseRef);
   if (!url) throw kino.error("not_found", "No se encontró la serie");
@@ -1312,6 +1346,20 @@ export async function episodes(ref) {
   }
   if (!list.length) throw kino.error("not_found", "No se encontraron episodios en la ficha pública");
 
+  // Las pestañas ?s=N cambian el listado dentro de la misma ficha de episodio.
+  if (namedTabMatch) {
+    const anchor = list.find((episode) => !episode.specialMovie);
+    if (!anchor) throw kino.error("not_found", "No se encontró un capítulo base para el especial");
+    const target = new URL(absolute(anchor.ref, detailUrl));
+    target.searchParams.set("s", namedTabMatch[2]);
+    const tabHtml = await getText(target.href);
+    const tabEpisodes = parseEpisodes(tabHtml, target.href)
+      .filter((episode) => !episode.specialMovie)
+      .sort((a, b) => a.number - b.number);
+    if (!tabEpisodes.length) throw kino.error("not_found", "No se encontraron episodios para el especial seleccionado");
+    return { series: info, episodes: tabEpisodes.map((episode) => ({ ...episode, season: 1 })) };
+  }
+
   // Algunas fichas muestran solo los episodios de la temporada seleccionada, aunque
   // anuncian varias temporadas. Cada ruta /watch/<serie>-<temporada>-1 contiene la
   // lista real de esa temporada; la consultamos cuando la ficha no trae la lista entera.
@@ -1332,8 +1380,22 @@ export async function episodes(ref) {
     }
   }
   const seasonCount = Math.max(declaredSeasons, listedMaxSeason, linkedMaxSeason);
-  if ((seasonCount > 1 || list.filter((episode) => !episode.specialMovie).length <= 1) && firstEpisode) {
-    for (let number = 1; number <= seasonCount; number++) {
+  let namedSeasonTabs = [];
+  if (firstEpisode && seasonCount > listedMaxSeason) {
+    try {
+      const episodeUrl = absolute(firstEpisode.ref, detailUrl);
+      const episodeHtml = await getText(episodeUrl);
+      namedSeasonTabs = parseNamedSeasonTabs(episodeHtml, episodeUrl)
+        .filter((tab) => !list.some((episode) => episode.season === tab.season));
+    } catch (error) {
+      log("No se pudieron consultar pestañas de temporadas alternativas", error.message);
+    }
+  }
+  const regularSeasonCount = namedSeasonTabs.length
+    ? Math.max(listedMaxSeason, linkedMaxSeason)
+    : seasonCount;
+  if ((regularSeasonCount > 1 || list.filter((episode) => !episode.specialMovie).length <= 1) && firstEpisode) {
+    for (let number = 1; number <= regularSeasonCount; number++) {
       const existing = seasonItems(list, number);
       // Nuevo enfoque para fichas con rutas UUID: si la lista pública empieza en
       // el capítulo 2 o posterior, no asumir que la temporada está completa.
@@ -1493,6 +1555,17 @@ export async function episodes(ref) {
       number,
       current: selectedSeason ? number === selectedSeason : number === (seasonNumbers[0] || 1)
     }));
+  }
+
+  if (namedSeasonTabs.length && regularEpisodes.length) {
+    for (const tab of namedSeasonTabs) {
+      seasons.push({
+        id: slug + "-season-tab-" + tab.season,
+        ref: "season-tab:" + slug + ":" + tab.query,
+        title: tab.title,
+        number: Math.min(999, tab.season)
+      });
+    }
   }
 
   if (specialMovies.length && regularEpisodes.length) {
