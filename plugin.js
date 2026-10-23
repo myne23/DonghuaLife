@@ -561,9 +561,9 @@ export async function search(query) {
   // se guarda en kino.storage, así la búsqueda cubre todo el catálogo y no solo 3 páginas.
   let index = readIndex() || { items: [], next: 1, done: false };
   const found = pick(index.items);
-  if (index.done || found.length) {
-    if (found.length || index.done) return found;
-  }
+  if (found.length) return found;
+  // Si el índice ya se completó sin coincidencias, continuar con los respaldos
+  // (incluida la búsqueda directa de fichas de especiales fuera del catálogo).
   const started = Date.now();
   while (!index.done && index.next <= INDEX_MAX_PAGES && Date.now() - started < SEARCH_BUDGET_MS) {
     let items = [];
