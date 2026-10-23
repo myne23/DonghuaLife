@@ -1603,7 +1603,7 @@ export async function episodes(ref) {
     throw kino.error("not_found", "No se encontraron episodios para la temporada " + selectedSeason);
   }
 
-  if (seasonNumbers.length > 1 || selectedSeason || needsEpisodeBlocks || blockMatch) {
+  if (seasonNumbers.length > 1 || selectedSeason || needsEpisodeBlocks || blockMatch || namedSeasonTabs.length) {
     return {
       series: info,
       episodes: selectedEpisodes,
