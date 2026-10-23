@@ -246,7 +246,7 @@ function parseNamedSeasonTabs(html, pageUrl) {
     const query = "s=" + encodeURIComponent(seasonValue);
     if (seen.has(query + "|" + title)) continue;
     seen.add(query + "|" + title);
-    tabs.push({ title: title.trim().slice(0, 180), query, season: Number(seasonValue) });
+    tabs.push({ title: title.trim().replace(/\bMaiasma\b/gi, "Miasma").slice(0, 180), query, season: Number(seasonValue) });
   }
   return tabs;
 }
