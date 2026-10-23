@@ -10,8 +10,13 @@ const episodeHtml = '<html><h1>Eclipse of Illusion — Cap. 1</h1>' +
   '<a href="/watch/eclipse-illusion-1-1">Capítulo 1</a></html>';
 const tabHtml = '<html><h1>Eclipse of Illusion — Cap. 1</h1>' +
   '<a href="?s=1">Temporada 1</a><a href="?s=2">The Maiasma War</a>' +
-  Array.from({length:6}, (_,i) => '<a href="/watch/eclipse-illusion-1-' + (i+1) + '">Capítulo ' + (i+1) + ' Episodio ' + (i+1) + '</a>').join('') +
+  Array.from({length:6}, (_,i) => '<div class="episode-card"><a href="/watch/9ab4528d-3c5a-4cbb-ab23-bbf5379d089a-the-maiasma-war--' + (i+1) + '">' + (i+1) + ' Episodio ' + (i+1) + '</a></div>').join('') +
   '</html>';
+const immortalHtml = '<html><h1>El renegado inmortal</h1><p>2 temporadas</p>' +
+  '<a href="/watch/immortal-renegade-1-1">Capítulo 1</a>' +
+  '<a href="/watch/immortal-renegade-peli-151-152">Peli Ep 151-152</a></html>';
+const immortalEpisodeHtml = '<html><a href="?s=1">Temporada 1</a>' +
+  '<a href="?s=2">Peli Ep 151-152</a><a href="/watch/immortal-renegade-1-1">Capítulo 1</a></html>';
 const specialHtml = '<html><h1>The Miasma War</h1><p>Continuation</p><a href="/watch/the-miasma-war-1-1">Capítulo 1</a></html>';
 const store = new Map();
 globalThis.kino = {
@@ -24,6 +29,9 @@ globalThis.kino = {
     if (url === "https://donghualife.com/series?sort=az") return {ok:true,status:200,async text(){return "";}};
     if (url === "https://donghualife.com/") return {ok:true,status:200,async text(){return "";}};
     if (url === baseUrl) return {ok:true,status:200,async text(){return baseHtml;}};
+    if (url === "https://donghualife.com/series/el-renegado-inmortal") return {ok:true,status:200,async text(){return immortalHtml;}};
+    if (url === "https://donghualife.com/watch/immortal-renegade-1-1") return {ok:true,status:200,async text(){return immortalEpisodeHtml;}};
+    if (url === "https://donghualife.com/watch/immortal-renegade-1-1?s=2") return {ok:true,status:200,async text(){return immortalEpisodeHtml;}};
     if (url === "https://donghualife.com/watch/eclipse-illusion-1-1") return {ok:true,status:200,async text(){return episodeHtml;}};
     if (url === "https://donghualife.com/watch/eclipse-illusion-1-1?s=2") return {ok:true,status:200,async text(){return tabHtml;}};
     if (url === specialUrl) return {ok:true,status:200,async text(){return specialHtml;}};
@@ -46,7 +54,11 @@ assert.ok(special, "La pestaña con nombre propio debe aparecer en el selector")
 assert.equal(special.title, "The Miasma War", "Debe conservar el título del selector sin inventar una temporada");
 const selected = await plugin.episodes(special.ref);
 assert.equal(selected.episodes.length, 6, "La pestaña alternativa debe cargar sus seis episodios");
-assert.ok(selected.episodes.every((episode) => episode.ref.includes("?s=2")), "Cada episodio debe conservar ?s=2 para la reproducción");
+assert.equal(selected.episodes.map((episode) => episode.number).join(","), "1,2,3,4,5,6");
+assert.ok(selected.episodes.every((episode) => /the-maiasma-war--\d+$/.test(episode.ref)), "Debe usar las URLs reales de los seis episodios del especial");
+const immortal = await plugin.episodes("el-renegado-inmortal");
+assert.equal(immortal.seasons.filter((season) => /peli\s*ep\s*151-152/i.test(season.title)).length, 1,
+  "Peli Ep 151-152 debe aparecer una sola vez, no como pestaña ?s=2 adicional");
 const found = await plugin.search("The Miasma War");
 assert.equal(found[0]?.ref, "the-miasma-war", "El buscador debe encontrar una ficha no indexada en el catálogo A-Z");
 assert.equal(found[0]?.title, "The Miasma War");
