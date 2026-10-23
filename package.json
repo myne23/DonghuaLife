@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:smoke": "node test/smoke-test.mjs && node test/search-index-test.mjs && node test/r2-native-resolver-test.mjs && node test/r2-subtitle-diagnostics-test.mjs && node test/native-player-api-test.mjs && node test/native-provider-dispatch-test.mjs && node test/native-source-alternatives-test.mjs && node test/r2-inline-subtitle-delivery-test.mjs && node test/season-vip-poster-test.mjs && node test/odysee-long-token-test.mjs && node test/odysee-preflight-headers-test.mjs && node test/odysee-browser-resolver-test.mjs && node test/odysee-native-direct-source-test.mjs"
+    "test:smoke": "node test/smoke-test.mjs && node test/search-index-test.mjs && node test/r2-native-resolver-test.mjs && node test/r2-subtitle-diagnostics-test.mjs && node test/native-player-api-test.mjs && node test/native-provider-dispatch-test.mjs && node test/native-source-alternatives-test.mjs && node test/r2-inline-subtitle-delivery-test.mjs && node test/season-vip-poster-test.mjs && node test/named-special-search-test.mjs && node test/odysee-long-token-test.mjs && node test/odysee-preflight-headers-test.mjs && node test/odysee-browser-resolver-test.mjs && node test/odysee-native-direct-source-test.mjs"
   }
 }
